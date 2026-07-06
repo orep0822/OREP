@@ -736,15 +736,6 @@ def _profile_path():
     safe = re.sub(r"[^a-zA-Z0-9_.@-]", "_", str(uid))
     return os.path.join(PROFILE_DIR, safe + ".json")
 
-def save_profile():
-    """온보딩·마이페이지에서 입력한 프로필 값을 로그인 계정별 파일에 저장한다."""
-    data = {k: v for k, v in ss.items() if k.startswith(PROFILE_KEY_PREFIXES) or k in ("onboarded", "ob_step")}
-    try:
-        with open(_profile_path(), "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, default=str)
-    except Exception:
-        pass
-
 def load_profile():
     p = _profile_path()
     if os.path.exists(p):
@@ -755,7 +746,25 @@ def load_profile():
             return None
     return None
 
-# Streamlit이 화면 이동(rerun) 시 메모리 최적화를 위해 위젯 데이터를
+def save_profile():
+    """온보딩·마이페이지에서 입력한 프로필 값을 로그인 계정별 파일에 저장한다."""
+    uid = _current_user_id()
+    if not uid or uid == "unknown":
+        return
+    
+    # 기존 저장된 프로필을 불러와 현재 세션에 있는 값만 덮어씌움
+    # (위젯이 화면에서 사라져서 세션에서 날아가더라도 기존 데이터는 파일에 유지됨)
+    existing = load_profile() or {}
+    for k, v in ss.items():
+        if k.startswith(PROFILE_KEY_PREFIXES) or k in ("onboarded", "ob_step", "nav"):
+            existing[k] = v
+    try:
+        with open(_profile_path(), "w", encoding="utf-8") as f:
+            json.dump(existing, f, ensure_ascii=False, default=str)
+    except Exception:
+        pass
+
+# Streamlit이 화면 이동 시 메모리 최적화를 위해 위젯 데이터를
 # 강제 삭제하는 현상을 막기 위해, 매번 디스크에서 불러와 빈 곳을 복구한다.
 _saved_profile = load_profile()
 if _saved_profile:
@@ -1381,7 +1390,7 @@ def page_news(M):
         ai_explain(
             f"‘{검색어}’ 관련 최신 뉴스 <b>{len(news)}건</b>을 모아왔습니다. 제목을 눌러 원문을 확인하고, "
             f"우리 회사 유가 리스크(현재 {M.점수:.0f}점, {M.등급})와 함께 참고하시면 시장 분위기를 "
-            f"가늠하는 데 도움이 됩니다.")
+            f"가늠하는 단서가 됩니다.")
         for n in news:
             st.markdown(f"**[{n['title']}]({n['link']})**")
             if n["date"]:
