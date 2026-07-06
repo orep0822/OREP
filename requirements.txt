@@ -1,0 +1,7 @@
+streamlit
+requests
+xmltodict
+pandas
+numpy
+matplotlib
+yfinance
