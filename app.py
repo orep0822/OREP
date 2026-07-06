@@ -267,9 +267,9 @@ def build_recommendations(기간변동률, 실제_손실, 전가율, 점수):
         recs.append("📉 이 기간 실질 부담이 늘었습니다. **원가 반영 항목**을 점검하세요.")
     return recs
 
-# ═════════════════════════════════════════════════════════════
+# ─────────────────────────────────────────────────────────────
 #  AI 함수
-# ═════════════════════════════════════════════════════════════
+# ─────────────────────────────────────────────────────────────
 def gemini_call(prompt):
     url = ("https://generativelanguage.googleapis.com/v1beta/models/"
            + LLM_MODEL + ":generateContent")
@@ -632,159 +632,75 @@ div[data-testid="stMetricDelta"] { font-size: clamp(.72rem, 4cqw, .9rem) !import
 
 .stTextInput input, .stNumberInput input, .stTextArea textarea,
 .stSelectbox div[data-baseweb="select"] > div, .stMultiSelect div[data-baseweb="select"] > div {
-    border-radius:12px !important; border-color:#E5E8EB !important; }
-
-div[data-testid="stExpander"] { border:1px solid #E5E8EB; border-radius:14px; background:#fff; }
-div[data-testid="stVerticalBlockBorderWrapper"] { border-radius:16px; }
-
-.stProgress > div > div > div > div { background-color:#3182F6; }
-
-div[data-testid="stChatMessage"] { background:transparent; }
-
-hr { border-color:#E5E8EB !important; }
+    border-radius:12px; border:1px solid #E5E8EB; background:#fff; color:#191F28; padding:.55rem .8rem; }
+.stTextInput input:focus, .stNumberInput input:focus { border-color:#3182F6; box-shadow:0 0 0 3px rgba(49,130,246,0.15); }
 </style>
 """
 st.markdown(TDS_CSS, unsafe_allow_html=True)
 
 # ═════════════════════════════════════════════════════════════
-#  로그인 (아이디/비밀번호, 외부 연동 없이 자체 구현)
+#  회원 관리 & 구글 시트 프로필 저장소
 # ═════════════════════════════════════════════════════════════
-USERS_FILE = "users.json"
-
-def _hash_pw(password, salt):
-    return hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
+USER_FILE = "users_db.json"
+PROFILE_KEY_PREFIXES = ("pf_", "biz_")
 
 def load_users():
-    if os.path.exists(USERS_FILE):
+    if os.path.exists(USER_FILE):
         try:
-            with open(USERS_FILE, "r", encoding="utf-8") as f:
+            with open(USER_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return {}
     return {}
 
-def save_users(users):
-    try:
-        with open(USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(users, f, ensure_ascii=False)
-    except Exception:
-        pass
+def save_users(d):
+    with open(USER_FILE, "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False, indent=2)
+
+def _hash_pw(pw, salt):
+    return hashlib.sha256((pw + salt).encode()).hexdigest()
 
 ss = st.session_state
 ss.setdefault("auth_user", None)
-
-if not ss["auth_user"]:
-    _, mid, _ = st.columns([1, 1.2, 1])
-    with mid:
-        st.markdown(
-            "<div style='text-align:center;padding:60px 0 8px 0'>"
-            "<span style='font-family:Georgia,serif;font-size:44px;font-weight:900;"
-            "letter-spacing:-2px;color:#3182F6'>OREP<span style='color:#191F28'>.</span></span></div>"
-            "<div style='text-align:center;font-size:12px;color:#8B95A1;letter-spacing:2.5px;"
-            "font-weight:700;margin-bottom:26px'>OIL RISK EDURE PROGRAM</div>"
-            "<div style='text-align:center;color:#4E5968;font-size:15px;margin-bottom:20px;line-height:1.6'>"
-            "아이디로 로그인하면 계정별로 데이터가 분리 저장돼요.</div>",
-            unsafe_allow_html=True)
-
-        tab_login, tab_signup = st.tabs(["로그인", "회원가입"])
-
-        with tab_login:
-            with st.form("login_form"):
-                u = st.text_input("아이디", key="li_user")
-                p = st.text_input("비밀번호", type="password", key="li_pw")
-                login_submitted = st.form_submit_button("로그인", type="primary", use_container_width=True)
-            if login_submitted:
-                users = load_users()
-                rec = users.get(u)
-                if not rec:
-                    st.error("존재하지 않는 아이디예요.")
-                elif _hash_pw(p, rec["salt"]) != rec["pw_hash"]:
-                    st.error("비밀번호가 틀렸어요.")
-                else:
-                    ss["auth_user"] = u
-                    st.rerun()
-
-        with tab_signup:
-            with st.form("signup_form"):
-                nu = st.text_input("사용할 아이디", key="su_user")
-                np1 = st.text_input("비밀번호", type="password", key="su_pw1")
-                np2 = st.text_input("비밀번호 확인", type="password", key="su_pw2")
-                signup_submitted = st.form_submit_button("회원가입", type="primary", use_container_width=True)
-            if signup_submitted:
-                users = load_users()
-                if not nu.strip() or not np1:
-                    st.warning("아이디와 비밀번호를 입력해주세요.")
-                elif nu in users:
-                    st.error("이미 있는 아이디예요.")
-                elif np1 != np2:
-                    st.error("비밀번호 확인이 일치하지 않아요.")
-                else:
-                    salt = os.urandom(16).hex()
-                    users[nu] = {"salt": salt, "pw_hash": _hash_pw(np1, salt)}
-                    save_users(users)
-                    ss["auth_user"] = nu
-                    st.rerun()
-    st.stop()
+ss.setdefault("nav", "mypage")
+ss.setdefault("ob_step", 0)
+ss.setdefault("onboarded", False)
+ss.setdefault("lino_open", False)
+ss.setdefault("lino_history", [])
 
 def _current_user_id():
-    return ss.get("auth_user") or "unknown"
-
-# ═════════════════════════════════════════════════════════════
-#  세션 초기화 (백업 및 복구 로직 포함)
-# ═════════════════════════════════════════════════════════════
-_first_boot = "_boot_done" not in ss
-ss.setdefault("_boot_done", True)
-
-PROFILE_KEY_PREFIXES = ("pf_", "biz_", "user_")
+    return ss["auth_user"] if ss["auth_user"] else "unknown"
 
 def _profile_path():
-    uid = _current_user_id()
-    safe = re.sub(r"[^a-zA-Z0-9_.@-]", "_", str(uid))
-    return os.path.join(PROFILE_DIR, safe + ".json")
+    return os.path.join(PROFILE_DIR, f"profile_{_current_user_id()}.json")
 
-
-# ─────────────────────────────────────────────────────────────
-#  구글 시트 영구 저장소
-#  (Streamlit Cloud는 로컬 파일이 재배포/슬립 때마다 사라지므로,
-#   실제 값 저장은 구글 시트에 하고, 로컬 파일은 예비 백업으로만 사용)
-# ─────────────────────────────────────────────────────────────
-@st.cache_resource(show_spinner=False)
+@st.cache_resource
 def _gsheet_client():
-    """서비스 계정으로 구글 시트에 연결. secrets 설정이 없으면 None을 반환."""
-    if gspread is None:
-        return None
     try:
-        if "gcp_service_account" not in st.secrets:
-            return None
-        creds_dict = dict(st.secrets["gcp_service_account"])
-        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-        gc = gspread.authorize(creds)
-        sheet_id = _secret("GSHEET_ID", "")
-        if not sheet_id:
-            return None
-        sh = gc.open_by_key(sheet_id)
-        try:
-            ws = sh.worksheet("profiles")
-        except Exception:
-            ws = sh.add_worksheet(title="profiles", rows=2000, cols=3)
-            ws.append_row(["user_id", "profile_json", "updated_at"])
-        return ws
+        if "GSHEET_CREDENTIALS" in st.secrets:
+            info = json.loads(st.secrets["GSHEET_CREDENTIALS"])
+            creds = Credentials.from_service_account_info(info,
+                scopes=["https://www.googleapis.com/auth/spreadsheets"])
+            client = gspread.authorize(creds)
+            return client.open("OREP_Profiles").sheet1
     except Exception:
-        return None
+        pass
+    return None
 
 def _gsheet_find_row(ws, uid):
-    """시트에서 해당 사용자의 행 번호를 찾는다 (없으면 None)."""
     try:
-        cell = ws.find(uid, in_column=1)
-        return cell.row if cell else None
+        cells = ws.col_values(1)
+        if uid in cells:
+            return cells.index(uid) + 1
     except Exception:
-        return None
+        pass
+    return None
 
 def load_profile():
     uid = _current_user_id()
-
-    # 1) 구글 시트에서 우선 조회 (설정돼 있을 때)
+    if not uid or uid == "unknown":
+        return None
+    # 1) 구글 시트 우선 조회
     ws = _gsheet_client()
     if ws is not None:
         try:
@@ -795,7 +711,6 @@ def load_profile():
                     return json.loads(raw)
         except Exception:
             pass
-
     # 2) 구글 시트가 설정 안 됐거나 실패한 경우 로컬 백업 파일 사용
     p = _profile_path()
     if os.path.exists(p):
@@ -807,19 +722,17 @@ def load_profile():
     return None
 
 def save_profile():
-    """온보딩·마이페이지에서 입력한 프로필 값을 로그인 계정별로 저장한다.
-    구글 시트 연결이 설정돼 있으면 그쪽에 저장하고(재배포/슬립에도 유지),
-    항상 로컬 파일에도 백업해 둔다."""
+    """온보딩·마이페이지에서 입력한 프로필 값을 로그인 계정별로 저장한다."""
     uid = _current_user_id()
     if not uid or uid == "unknown":
         return
 
     # 기존 저장된 프로필을 불러와 현재 세션에 있는 값만 덮어씌움
-    # (위젯이 화면에서 사라져서 세션에서 날아가더라도 기존 데이터는 유지됨)
     existing = load_profile() or {}
     for k, v in ss.items():
-        if k.startswith(PROFILE_KEY_PREFIXES) or k in ("onboarded", "ob_step", "nav"):
+        if k.startswith(PROFILE_KEY_PREFIXES) or k in ("onboarded", "ob_step", "nav", "user_first_name", "user_last_name", "user_email"):
             existing[k] = v
+            
     payload = json.dumps(existing, ensure_ascii=False, default=str)
 
     ws = _gsheet_client()
@@ -841,62 +754,101 @@ def save_profile():
     except Exception:
         pass
 
-# Streamlit이 화면 이동 시 메모리 최적화를 위해 위젯 데이터를
-# 강제 삭제하는 현상을 막기 위해, 매번 디스크에서 불러와 빈 곳을 복구한다.
+    # 세션 상태가 삭제되지 않도록 보존 처리
+    _saved_profile = load_profile()
+    if _saved_profile:
+        for k, v in _saved_profile.items():
+            if k not in ss:
+                ss[k] = v
+        ss["onboarded"] = _saved_profile.get("onboarded", ss.get("onboarded", False))
+        ss["ob_step"] = _saved_profile.get("ob_step", ss.get("ob_step", 0))
+
+# 세션의 기본 초기값 보조 설정
 _saved_profile = load_profile()
 if _saved_profile:
-    for k, v in _saved_profile.items():
-        if k not in ss:
-            ss[k] = v
-
-ss.setdefault("onboarded", False)
-ss.setdefault("ob_step", 0)
-ss.setdefault("nav", "home")
-ss.setdefault("lino_open", False)
-ss.setdefault("lino_history", [])
-ss.setdefault("ai_analysis", None)
-
-_REQUIRED_PROFILE_DEFAULTS = {
-    "user_first_name": "", "user_email": "",
-    "biz_계산방식": "spend_based", "biz_질문들": [],
-    "pf_업종명": "일반 사업체", "pf_유종명": "자동차용경유",
-    "pf_전가율": 30, "pf_연료비중": 10, "pf_환율민감도": 0,
-    "pf_영업이익률": 5, "pf_월매출": 0, "pf_지역": "서울", "pf_기간": "7일",
-}
-
-if ss.onboarded:
-    for _k, _v in _REQUIRED_PROFILE_DEFAULTS.items():
+    for _k, _v in _saved_profile.items():
         ss.setdefault(_k, _v)
+    ss["onboarded"] = _saved_profile.get("onboarded", ss.get("onboarded", False))
+    ss["ob_step"] = _saved_profile.get("ob_step", ss.get("ob_step", 0))
 
-OB_STEPS = ["user_info", "intro", "confirm", "usage", "sales", "tune", "region"]
+# ═════════════════════════════════════════════════════════════
+#  인증 화면 처리
+# ═════════════════════════════════════════════════════════════
+if not ss["auth_user"]:
+    _, mid, _ = st.columns([1, 1.2, 1])
+    with mid:
+        st.markdown(
+            "<div style='text-align:center;padding:6px 0 8px 0'>"
+            "<span style='font-family:Georgia,serif;font-size:44px;font-weight:900;"
+            "letter-spacing:-2px;color:#3182F6'>OREP<span style='color:#191F28'>.</span></span></div>"
+            "<div style='text-align:center;font-size:12px;color:#8B95A1;letter-spacing:2.5px;"
+            "font-weight:700;margin-bottom:26px'>OIL RISK EDURE PROGRAM</div>"
+            "<div style='text-align:center;color:#4E5968;font-size:15px;margin-bottom:20px;line-height:1.6'>"
+            "아이디로 로그인하면 계정별로 데이터가 분리 저장돼요.</div>", unsafe_allow_html=True)
+        
+        tab_login, tab_signup = st.tabs(["로그인", "회원가입"])
+        with tab_login:
+            with st.form("login_form"):
+                u = st.text_input("아이디", key="li_user")
+                p = st.text_input("비밀번호", type="password", key="li_pw")
+                login_submitted = st.form_submit_button("로그인", type="primary", use_container_width=True)
+                if login_submitted:
+                    users = load_users()
+                    rec = users.get(u)
+                    if not rec:
+                        st.error("존재하지 않는 아이디예요.")
+                    elif _hash_pw(p, rec["salt"]) != rec["pw_hash"]:
+                        st.error("비밀번호가 틀렸어요.")
+                    else:
+                        ss["auth_user"] = u
+                        # 로그인 직후 해당 유저 프로필 복원
+                        p_data = load_profile()
+                        if p_data:
+                            for pk, pv in p_data.items():
+                                ss[pk] = pv
+                        st.rerun()
+        with tab_signup:
+            with st.form("signup_form"):
+                nu = st.text_input("사용할 아이디", key="su_user")
+                np1 = st.text_input("비밀번호", type="password", key="su_pw1")
+                np2 = st.text_input("비밀번호 확인", type="password", key="su_pw2")
+                signup_submitted = st.form_submit_button("회원가입", type="primary", use_container_width=True)
+                if signup_submitted:
+                    users = load_users()
+                    if not nu.strip():
+                        st.error("아이디를 입력하세요.")
+                    elif nu in users:
+                        st.error("이미 사용 중인 아이디예요.")
+                    elif np1 != np2:
+                        st.error("비밀번호가 서로 달라요.")
+                    elif len(np1) < 4:
+                        st.error("비밀번호는 4자리 이상으로 해주세요.")
+                    else:
+                        salt = os.urandom(16).hex()
+                        users[nu] = {"salt": salt, "pw_hash": _hash_pw(np1, salt)}
+                        save_users(users)
+                        st.success("회원가입이 완료되었습니다! 로그인 탭에서 로그인해 주세요.")
 
-WELCOME_MSGS = [
-    "오늘도 현명한 결정, 함께 준비해요.",
-    "유가의 흐름을 미리 읽어 대비하는 하루 되세요.",
-    "작은 변동도 놓치지 않겠습니다.",
-    "데이터로 리스크를 줄여드릴게요.",
-    "대표님의 원가 부담을 덜어드릴 준비가 됐어요.",
-    "위기를 기회로. OREP이 함께합니다.",
-    "지금의 대비가 내일의 여유가 됩니다.",
-]
-if "welcome_idx" not in ss:
-    import random as _rd
-    ss["welcome_idx"] = _rd.randint(0, len(WELCOME_MSGS)-1)
+    st.stop()
 
-def apply_business_analysis(result, desc):
-    ss["biz_desc"] = desc
-    ss["biz_특징"] = result["특징"]
-    ss["biz_계산방식"] = result["계산방식"]
-    ss["biz_질문들"] = result["필수질문"]
-    ss["biz_추가질문"] = result["추가질문"]
-    ss["pf_업종명"] = result["업종명"]
-    ss["pf_유종명"] = result["주유종"]
-    ss["pf_전가율"] = result["전가율"]
-    ss["pf_연료비중"] = result["연료비중"]
-    ss["pf_환율민감도"] = result["환율민감도"]
-    for q in result["필수질문"]:
+# ─────────────────────────────────────────────────────────────
+#  온보딩 단계 정의
+# ─────────────────────────────────────────────────────────────
+OB_STEPS = ["welcome", "biz_desc", "confirm", "usage", "tune", "region"]
+
+def apply_business_analysis(res, desc):
+    ss["pf_업종명"] = res["업종명"]
+    ss["biz_특징"] = res["특징"]
+    ss["pf_전가율"] = res["전가율"]
+    ss["pf_연료비중"] = res["연료비중"]
+    ss["pf_환율민감도"] = res["환율민감도"]
+    ss["pf_유종명"] = res["주유종"]
+    ss["biz_계산방식"] = res["계산방식"]
+    ss["biz_질문들"] = res["필수질문"]
+    ss["biz_추가질문"] = res["추가질문"]
+    for q in res["필수질문"]:
         ss["pf_role_" + q["role"]] = q["default"]
-    for q in result["추가질문"]:
+    for q in res["추가질문"]:
         ss["pf_extra_" + q["id"]] = ""
     ss["_applied_override"] = False
     ss.pop("_orig_계산방식", None)
@@ -913,12 +865,18 @@ def apply_business_analysis(result, desc):
 #  지표 계산
 # ═════════════════════════════════════════════════════════════
 def compute_metrics():
-    업종명 = ss.get("pf_업종명", "일반 사업체"); 특징 = ss.get("biz_특징", "")
-    계산방식 = ss.get("biz_계산방식", "spend_based"); 질문들 = ss.get("biz_질문들", [])
-    유종명 = ss.get("pf_유종명", "자동차용경유"); 전가율 = ss.get("pf_전가율", 30)
-    연료비중 = ss.get("pf_연료비중", 10); 환율민감도 = ss.get("pf_환율민감도", 0)
-    영업이익률 = ss.get("pf_영업이익률", 5); 월_매출 = ss.get("pf_월매출", 0)
-    내지역 = ss.get("pf_지역", "서울"); 기간옵션 = ss.get("pf_기간", "7일")
+    업종명 = ss.get("pf_업종명", "일반 사업체")
+    특징 = ss.get("biz_특징", "")
+    계산방식 = ss.get("biz_계산방식", "spend_based")
+    질문들 = ss.get("biz_질문들", [])
+    유종명 = ss.get("pf_유종명", "자동차용경유")
+    전가율 = ss.get("pf_전가율", 30)
+    연료비중 = ss.get("pf_연료비중", 10)
+    환율민감도 = ss.get("pf_환율민감도", 0)
+    영업이익률 = ss.get("pf_영업이익률", 5)
+    월_매출 = ss.get("pf_월매출", 0)
+    내지역 = ss.get("pf_지역", "서울")
+    기간옵션 = ss.get("pf_기간", "7일")
     비교유종 = ss.get("pf_비교유종", [])
     owner_notes = ss.get("pf_notes", "")
 
@@ -937,62 +895,85 @@ def compute_metrics():
     시작가 = view["PRICE"].iloc[0]
     하루변화 = 현재가 - 어제가
     기간변동률 = (현재가 - 시작가) / 시작가 * 100 if 시작가 else 0
-    view["변화"] = view["PRICE"].diff()
-    평소변동 = view["변화"].abs().mean()
-    if pd.isna(평소변동):
-        평소변동 = None
     방향 = "상승" if 기간변동률 > 0 else ("하락" if 기간변동률 < 0 else "보합")
 
-    role_values = {q["role"]: ss.get("pf_role_" + q["role"], q["default"]) for q in 질문들}
-    try:
-        월_사용량 = TEMPLATES[계산방식]["calc"](role_values, 현재가)
-    except Exception:
-        월_사용량 = 0
-    월_사용량 = max(float(월_사용량 or 0), 0)
+    # 월 연료 사용량 산출
+    v_inputs = {}
+    for q in 질문들:
+        v_inputs[q["role"]] = ss.get("pf_role_" + q["role"], q["default"])
 
-    연료비_변화 = (현재가 - 시작가) * 월_사용량
-    실제_손실 = 연료비_변화 * (1 - 전가율/100)
-    기준환율 = 1350.0
-    try:
-        _cur_fx, _ = get_exchange()
-    except Exception:
-        _cur_fx = None
-    환차_패널티 = 0.0
-    if _cur_fx and 환율민감도 > 0:
-        환율상승률 = (_cur_fx - 기준환율) / 기준환율
-        원자재_월원가 = 현재가 * 월_사용량 * (환율민감도/100) * 3
-        환차_패널티 = 원자재_월원가 * max(환율상승률, 0)
-    실제_손실_총 = 실제_손실 + 환차_패널티
+    if ss.get("pf_override_spend") and "monthly_spend" in ss:
+        월_사용량 = ss["monthly_spend"] / 현재가 if 현재가 else 0
+    else:
+        calc_fn = TEMPLATES.get(계산방식, TEMPLATES["spend_based"])["calc"]
+        월_사용량 = calc_fn(v_inputs, 현재가)
+
+    # 기간 유류비 변화량
+    기간_사용량 = 월_사용량 * (7/30 if 기간옵션=="7일" else (1 if 기간옵션=="30일" else 3))
+    연료비_변화 = (현재가 - 시작가) * 기간_사용량
+
+    # 환율 연동 반영
+    환율_현재, _ = get_exchange()
+    환차_패널티 = 0
+    _fx_txt = "불러오기 실패"
+    if 환율_현재 and 환율민감도 > 0:
+        _fx_txt = f"{환율_현재:,.1f}원"
+        환차_패널티 = 연료비_변화 * (환율민감도 / 100) * 0.1
+
+    실제_손실_총 = 연료비_변화 * (1 - 전가율/100) + 환차_패널티
     매출대비 = (실제_손실_총 / 월_매출 * 100) if 월_매출 else 0
-    점수 = min(100, abs(기간변동률)*4 + (100-전가율)*0.4 + 연료비중*0.6)
-    등급, 색 = ("낮음", "🟢") if 점수 < 33 else (("보통", "🟡") if 점수 < 66 else ("높음", "🔴"))
+
+    # 리스크 점수 모델링
+    변동폭_점수 = min(40, max(0, abs(기간변동률) * 6))
+    비중_점수 = (연료비중 / 100) * 30
+    전가_방어_점수 = ((100 - 전가율) / 100) * 20
+    환율_점수 = (환율민감도 / 100) * 10
+    점수 = min(100, max(0, 변동폭_점수 + 비중_점수 + 전가_방어_점수 + 환율_점수))
+
+    if 점수 >= 66:
+        등급 = "심각 (High)"
+        색 = "🔴"
+    elif 점수 >= 33:
+        등급 = "주의 (Moderate)"
+        색 = "🟡"
+    else:
+        등급 = "안정 (Low)"
+        색 = "🟢"
+
     recs = build_recommendations(기간변동률, 실제_손실_총, 전가율, 점수)
     마지노선 = breakeven_price(현재가, 월_사용량, 전가율, 월_매출, 영업이익률)
 
-    return SimpleNamespace(**locals())
+    return SimpleNamespace(
+        업종명=업종명, 특징=특징, 계산방식=계산방식, 질문들=질문들, 유종명=유종명, 전가율=전가율,
+        연료비중=연료비중, 환율민감도=환율민감도, 영업이익률=영업이익률, 월_매출=월_매출, 내지역=내지역,
+        기간옵션=기간옵션, 비교유종=비교유종, owner_notes=owner_notes, view=view, hist=hist,
+        현재가=현재가, 하루변화=하루변화, 기간변동률=기간변동률, 방향=방향, 월_사용량=월_사용량,
+        연료비_변화=연료비_변화, 실제_손실_총=실제_손실_총, 매출대비=매출대비, 점수=점수, 등급=등급,
+        색=색, recs=recs, 마지노선=마지노선, _fx_txt=_fx_txt, 환차_패널티=환차_패널티
+    )
 
 # ═════════════════════════════════════════════════════════════
-#  조기 경보 알림 로직 (AI 판단 자동 발송)
+#  조기 경보 (자동)
 # ═════════════════════════════════════════════════════════════
-def check_and_send_alert(M):
+def check_and_trigger_alert(M):
     email = ss.get("user_email")
-    if not email or SMTP_EMAIL.startswith("여기에"):
+    if not email or "@" not in email:
         return
+    if len(M.view) < 2:
+        return
+    prices = M.view["PRICE"].values
+    diffs = np.abs(np.diff(prices))
+    평소 = np.mean(diffs) if len(diffs) > 0 else 1.0
 
-    평소 = M.평소변동 if M.평소변동 else 1
     급변감지 = False
     이유 = ""
-
-    # 1. 일일 가격 변동폭이 평소의 3배 이상인 경우
     if abs(M.하루변화) >= 평소 * 3:
         급변감지 = True
         이유 = f"일일 가격 변동폭({M.하루변화:+.1f}원)이 평소({평소:.1f}원) 대비 3배 이상 크게 발생했습니다."
-    # 2. 누적 기간 변동률이 5% 이상인 경우
     elif abs(M.기간변동률) >= 5.0:
         급변감지 = True
         이유 = f"설정하신 기간 내 누적 변동률({M.기간변동률:+.1f}%)이 5%를 초과했습니다."
 
-    # 중복 발송 방지 로직
     last_price = ss.get("last_alert_price")
     if last_price and 급변감지:
         if abs(M.현재가 - last_price) / last_price * 100 < 2.0:
@@ -1010,355 +991,207 @@ def check_and_send_alert(M):
             send_alert_email(email, 제목, 본문)
             ss["last_alert_price"] = M.현재가
             st.toast("⚠️ 유가 큰 변동이 감지되어 조기 경보 이메일이 자동 발송되었습니다.")
-        except Exception as e:
+        except Exception:
             pass
 
 # ═════════════════════════════════════════════════════════════
-#  온보딩 위저드
+#  온보딩 위저드 렌더링
 # ═════════════════════════════════════════════════════════════
 def render_onboarding():
-    st.markdown("<style>section[data-testid='stSidebar']{display:none !important;}</style>",
-                unsafe_allow_html=True)
+    st.markdown("<style>section[data-testid='stSidebar']{display:none !important;}</style>", unsafe_allow_html=True)
     step = OB_STEPS[ss.ob_step]
     total = len(OB_STEPS)
+
     _, mid, _ = st.columns([1, 3.2, 1])
     with mid:
         st.markdown(
             "<div style='text-align:center;padding:6px 0 2px 0'>"
-            "<span style='font-family:Georgia,serif;font-size:40px;font-weight:900;"
-            "letter-spacing:-2px;color:#3182F6'>OREP<span style='color:#191F28'>.</span></span></div>"
-            "<div style='text-align:center;font-size:11px;color:#8B95A1;letter-spacing:2.5px;"
-            "font-weight:700;margin-bottom:6px'>OIL RISK EDURE PROGRAM</div>",
-            unsafe_allow_html=True)
-        st.progress((ss.ob_step) / (total - 1))
-        st.markdown(f"<div style='text-align:right;font-size:12px;color:#8B95A1;margin-top:-6px'>"
-                    f"{ss.ob_step+1} / {total} 단계</div>", unsafe_allow_html=True)
-        st.write("")
+            "<span style='font-family:Georgia,serif;font-size:40px;font-weight:900;color:#3182F6'>OREP.</span>"
+            "</div>", unsafe_allow_html=True)
+        st.progress((ss.ob_step + 1) / total)
+        st.markdown(f"<div style='text-align:right;font-size:12px;color:#8B95A1;margin-bottom:24px;font-weight:600'>STEP {ss.ob_step+1} / {total}</div>", unsafe_allow_html=True)
 
-        if step == "user_info":
-            st.markdown("<div style='text-align:center'>"
-                        "<span style='font-size:24px;font-weight:800;color:#191F28'>"
-                        "사용자 정보와 조기 알림 설정</span></div>", unsafe_allow_html=True)
-            st.markdown("<div style='text-align:center;color:#6B7684;font-size:15px;margin:6px 0 18px 0'>"
-                        "유가 큰 변동 시 AI가 상황을 판단하여 이메일로 즉시 알려드려요.</div>",
-                        unsafe_allow_html=True)
-            st.text_input("성 (Last Name)", key="user_last_name", placeholder="예: 김")
-            st.text_input("이름 (First Name)", key="user_first_name", placeholder="예: 대표")
-            st.text_input("조기 경보 알림을 받을 이메일", key="user_email", placeholder="예: user@company.com")
-
-            if st.button("다음 →", type="primary", use_container_width=True, key="ob_user_info_next"):
-                if not ss.get("user_first_name"):
-                    st.warning("이름을 입력해주세요. (필수)")
-                elif not ss.get("user_email"):
-                    st.warning("경보 알림을 받을 이메일을 입력해주세요. (필수)")
+        # ── Step 1: Welcome ──
+        if step == "welcome":
+            st.markdown("<div style='text-align:center;margin-bottom:20px'>"
+                        "<span style='font-size:26px;font-weight:800;color:#191F28'>반가워요! 이름과 이메일을 알려주세요</span>"
+                        "</div>", unsafe_allow_html=True)
+            st.text_input("성 (Last Name)", placeholder="예: 김", key="user_last_name")
+            st.text_input("이름 (First Name)", placeholder="예: 길동", key="user_first_name")
+            st.text_input("이메일 주소 (유가 조기경보 리포트 수신용)", placeholder="example@gmail.com", key="user_email")
+            st.caption("입력하신 이메일은 유가가 급변할 때 자동 리스크 보고서를 보내드리는 용도로만 안전하게 활용됩니다.")
+            
+            if st.button("시작하기 →", type="primary", use_container_width=True, key="ob_welcome_next"):
+                if not ss.get("user_first_name", "").strip() or not ss.get("user_email", "").strip():
+                    st.warning("이름과 이메일 주소는 필수 항목입니다.")
                 else:
-                    ss.ob_step += 1
+                    ss.ob_step = 1
                     save_profile()
                     st.rerun()
 
-        elif step == "intro":
+        # ── Step 2: Business Description ──
+        elif step == "biz_desc":
             st.markdown("<div style='text-align:center'>"
-                        "<span style='font-size:26px;font-weight:800;color:#191F28'>"
-                        "어떤 사업을 하고 계신가요?</span></div>", unsafe_allow_html=True)
-            st.markdown("<div style='text-align:center;color:#6B7684;font-size:15px;margin:6px 0 18px 0'>"
-                        "업종과 특징을 편하게 적어주시면, AI가 읽고 맞춤 질문을 준비해요.</div>",
-                        unsafe_allow_html=True)
-            st.text_area(
-                "회사 소개",
-                key="ob_desc",
-                height=150,
-                placeholder="예) 수도권에서 냉동식품을 배송하는 물류회사예요. 냉동탑차 8대를 운영하고, "
-                            "여름철엔 물량이 두 배로 늘어요. 거래처와는 3개월 단위로 단가를 다시 정해요.",
-                label_visibility="collapsed",
-            )
-            st.caption("이 내용은 나중에 Lino 비서가 상담할 때도 함께 참고해요.")
+                        "<span style='font-size:24px;font-weight:800;color:#191F28'>어떤 사업을 운영하시나요?</span></div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:center;color:#6B7684;margin:6px 0 16px 0'>"
+                        "대표님의 사업 모델을 자유롭게 적어주시면, AI가 맞춤형 질문을 만듭니다.</div>", unsafe_allow_html=True)
+            desc = st.text_area("사업 설명", height=130, key="ob_desc",
+                                placeholder="예: 서울/경기권에서 신선 물류 새벽배송 대행업을 하고 있습니다. 1톤 탑차 6대를 운영 중이며 거래처와는 분기 단위로 계약합니다.")
+            
             c1, c2 = st.columns([1, 2])
-            if c1.button("← 이전", use_container_width=True, key="ob_intro_prev"):
-                ss.ob_step -= 1
+            if c1.button("← 이전", use_container_width=True, key="ob_desc_prev"):
+                ss.ob_step = 0
                 save_profile()
                 st.rerun()
-            if c2.button("다음 →", type="primary", use_container_width=True, key="ob_intro_next"):
+            if c2.button("AI 맞춤 진단 시작 →", type="primary", use_container_width=True, key="ob_desc_next"):
                 if not ss.get("ob_desc", "").strip():
                     st.warning("사업 내용을 한두 줄이라도 적어주세요. (필수)")
                 else:
                     with st.spinner("AI가 우리 사업에 맞는 질문을 준비하고 있어요..."):
                         result = analyze_business(ss["ob_desc"])
-                    apply_business_analysis(result, ss["ob_desc"])
-                    ss.ob_step += 1
+                        apply_business_analysis(result, ss["ob_desc"])
+                    ss.ob_step = 2
                     save_profile()
                     st.rerun()
 
+        # ── Step 3: Confirm ──
         elif step == "confirm":
             특징 = ss.get("biz_특징", "")
             st.markdown("<div style='text-align:center'>"
-                        "<span style='font-size:24px;font-weight:800;color:#191F28'>"
-                        "이렇게 이해했어요</span></div>", unsafe_allow_html=True)
+                        "<span style='font-size:24px;font-weight:800;color:#191F28'>이렇게 이해했어요</span></div>", unsafe_allow_html=True)
             if 특징:
-                st.markdown(f"<div style='background:#F2F6FF;border-radius:12px;padding:12px 16px;"
-                            f"margin:12px 0;color:#4E5968;font-size:14px'>"
-                            f"<b style='color:#3182F6'>AI 요약</b> · {특징}</div>",
-                            unsafe_allow_html=True)
+                st.markdown(f"<div style='background:#F2F6FF;border-radius:12px;padding:12px 16px;margin:12px 0;color:#4E5968;font-size:14px'>"
+                            f"<b style='color:#3182F6'>AI 요약</b> · {특징}</div>", unsafe_allow_html=True)
             st.text_input("업종명 (마음에 안 들면 직접 고쳐도 돼요)", key="pf_업종명")
             st.caption("업종을 정해진 목록에서 고른 게 아니라, AI가 설명을 읽고 자유롭게 지어낸 이름이에요.")
+            
             c1, c2 = st.columns([1, 2])
             if c1.button("← 이전", use_container_width=True, key="ob_confirm_prev"):
-                ss.ob_step -= 1
+                ss.ob_step = 1
                 save_profile()
                 st.rerun()
             if c2.button("다음 →", type="primary", use_container_width=True, key="ob_confirm_next"):
-                ss.ob_step += 1
+                ss.ob_step = 3
                 save_profile()
                 st.rerun()
 
+        # ── Step 4: Usage ──
         elif step == "usage":
             st.markdown("<div style='text-align:center'>"
-                        "<span style='font-size:24px;font-weight:800;color:#191F28'>"
-                        "연료 사용량을 알려주세요</span></div>", unsafe_allow_html=True)
+                        "<span style='font-size:24px;font-weight:800;color:#191F28'>연료 사용량을 알려주세요</span></div>", unsafe_allow_html=True)
             st.markdown(f"<div style='text-align:center;color:#6B7684;margin:6px 0 16px 0'>"
-                        f"AI가 <b>{ss.get('pf_업종명','우리 사업체')}</b>에 맞춰 준비한 질문이에요. (필수)</div>",
-                        unsafe_allow_html=True)
-
-            override = st.checkbox(
-                "정확한 수치를 모르겠어요 → 월 유류비 총 지출액으로 대신 입력할게요",
-                key="pf_override_spend")
-            if override and not ss.get("_applied_override"):
-                if ss["biz_계산방식"] != "spend_based":
-                    ss["_orig_계산방식"] = ss["biz_계산방식"]
-                    ss["_orig_질문들"] = ss["biz_질문들"]
-                    role = "monthly_spend"
-                    flabel, fph, funit, fdefault, ftype = TEMPLATES["spend_based"]["fallback"][role]
-                    ss["biz_계산방식"] = "spend_based"
-                    ss["biz_질문들"] = [{"role": role, "label": flabel, "placeholder": fph,
-                                       "unit": funit, "default": fdefault, "type": ftype}]
-                    ss["pf_role_" + role] = fdefault
-                ss["_applied_override"] = True
-            elif not override and ss.get("_applied_override"):
-                if "_orig_계산방식" in ss:
-                    ss["biz_계산방식"] = ss["_orig_계산방식"]
-                    ss["biz_질문들"] = ss["_orig_질문들"]
-                ss["_applied_override"] = False
-
-            for q in ss.get("biz_질문들", []):
-                label = q["label"] + (f"  ({q['unit']})" if q.get("unit") else "")
+                        f"AI가 <b>{TEMPLATE_LABELS.get(ss.get('biz_계산방식','spend_based'))}</b> 방식으로 설계했습니다.</div>", unsafe_allow_html=True)
+            
+            질문들 = ss.get("biz_질문들", [])
+            # 다음 단계 진입 시 값이 증발하는 것을 방지하기 위해 각 컴포넌트 데이터 처리
+            for q in 질문들:
+                label = q["label"] + (f" ({q['unit']})" if q.get("unit") else "")
+                key_str = "pf_role_" + q["role"]
                 if q["type"] == "float":
-                    st.number_input(label, min_value=0.0, step=0.1, key="pf_role_" + q["role"])
+                    st.number_input(label, min_value=0.0, step=0.1, key=key_str)
                 else:
-                    st.number_input(label, min_value=0, step=1, key="pf_role_" + q["role"])
-                if q.get("placeholder"):
-                    st.caption(q["placeholder"])
-
-            if ss.get("biz_추가질문"):
-                st.markdown("**참고할 추가 정보 (선택)**")
-                for q in ss["biz_추가질문"]:
-                    st.text_input(q["label"], key="pf_extra_" + q["id"])
+                    st.number_input(label, min_value=0, step=1, key=key_str)
 
             c1, c2 = st.columns([1, 2])
             if c1.button("← 이전", use_container_width=True, key="ob_usage_prev"):
-                ss.ob_step -= 1
+                ss.ob_step = 2
                 save_profile()
                 st.rerun()
             if c2.button("다음 →", type="primary", use_container_width=True, key="ob_usage_next"):
-                ss.ob_step += 1
+                ss.ob_step = 4
                 save_profile()
                 st.rerun()
 
-        elif step == "sales":
-            st.markdown("<div style='text-align:center'>"
-                        "<span style='font-size:24px;font-weight:800;color:#191F28'>"
-                        "매출 규모를 알려주세요</span></div>", unsafe_allow_html=True)
-            st.markdown("<div style='text-align:center;color:#6B7684;margin:6px 0 16px 0'>"
-                        "유가 부담이 매출·이익에서 차지하는 비중을 계산해요. (필수)</div>",
-                        unsafe_allow_html=True)
-            st.number_input("월 매출 (원)", min_value=0, step=1000000, key="pf_월매출")
-            st.number_input("영업이익률 (%)", min_value=0, max_value=100, step=1, key="pf_영업이익률")
-            c1, c2 = st.columns([1, 2])
-            if c1.button("← 이전", use_container_width=True, key="ob_sales_prev"):
-                ss.ob_step -= 1
-                save_profile()
-                st.rerun()
-            if c2.button("다음 →", type="primary", use_container_width=True, key="ob_sales_next"):
-                if ss["pf_월매출"] <= 0:
-                    st.warning("월 매출을 입력해주세요. (필수)")
-                else:
-                    ss.ob_step += 1
-                    save_profile()
-                    st.rerun()
-
+        # ── Step 5: Tune ──
         elif step == "tune":
             st.markdown("<div style='text-align:center'>"
-                        "<span style='font-size:24px;font-weight:800;color:#191F28'>"
-                        "판매가 반영과 주 유종</span></div>", unsafe_allow_html=True)
+                        "<span style='font-size:24px;font-weight:800;color:#191F28'>판매가 반영과 주 유종</span></div>", unsafe_allow_html=True)
             st.markdown("<div style='text-align:center;color:#6B7684;margin:6px 0 16px 0'>"
-                        "잘 모르시면 그대로 두고 건너뛰어도 돼요. (선택)</div>",
-                        unsafe_allow_html=True)
+                        "잘 모르시면 그대로 두고 건너뛰어도 돼요. (선택)</div>", unsafe_allow_html=True)
+            
             st.selectbox("주 사용 유종", list(PRODUCTS.keys()), key="pf_유종명")
-            st.number_input("판매가 전가율 (%)  ·  유가 상승분을 판매가에 반영하는 비율",
-                            min_value=0, max_value=100, step=1, key="pf_전가율")
-            st.number_input("환율 민감도 (%)  ·  원자재 달러 결제 등 환율 영향도",
-                            min_value=0, max_value=100, step=1, key="pf_환율민감도")
-
+            st.number_input("판매가 전가율 (%) · 유가 상승분을 판매가에 반영하는 비율", min_value=0, max_value=100, step=1, key="pf_전가율")
+            st.number_input("환율 민감도 (%) · 원자재 달러 결제 등 환율 영향도", min_value=0, max_value=100, step=1, key="pf_환율민감도")
+            
             c1, c2, c3 = st.columns([1, 1, 1.4])
             if c1.button("← 이전", use_container_width=True, key="ob_tune_prev"):
-                ss.ob_step -= 1
+                ss.ob_step = 3
                 save_profile()
                 st.rerun()
             if c2.button("건너뛰기", use_container_width=True, key="ob_tune_skip"):
-                ss.ob_step += 1
+                ss.ob_step = 5
                 save_profile()
                 st.rerun()
             if c3.button("다음 →", type="primary", use_container_width=True, key="ob_tune_next"):
-                ss.ob_step += 1
+                ss.ob_step = 5
                 save_profile()
                 st.rerun()
 
+        # ── Step 6: Region & Final ──
         elif step == "region":
             st.markdown("<div style='text-align:center'>"
-                        "<span style='font-size:24px;font-weight:800;color:#191F28'>"
-                        "마지막이에요</span></div>", unsafe_allow_html=True)
+                        "<span style='font-size:24px;font-weight:800;color:#191F28'>마지막이에요</span></div>", unsafe_allow_html=True)
             st.markdown("<div style='text-align:center;color:#6B7684;margin:6px 0 16px 0'>"
-                        "지역·조회 기간과, 우리 회사만의 특별한 사정을 적어주세요. (선택)</div>",
-                        unsafe_allow_html=True)
-            st.selectbox("우리 지역(시도)", SIDO_LIST, key="pf_지역")
-            st.radio("기본 조회 기간", ["7일", "30일", "전체"], horizontal=True, key="pf_기간")
-            st.multiselect("함께 비교할 유종", list(PRODUCTS.keys()), key="pf_비교유종")
-            st.text_area("추가 정보 (자유 입력)", key="pf_notes", height=100,
-                         placeholder="예) 특정 거래처와 3개월 고정단가 계약 중 / 성수기엔 물량 2배 등")
-            c1, c2, c3 = st.columns([1, 1, 1.4])
+                        "지역·조회 기간과, 우리 회사만의 특별한 사정을 적어주세요. (선택)</div>", unsafe_allow_html=True)
+            
+            st.selectbox("사업장 소재 지역", SIDO_LIST, key="pf_지역")
+            st.selectbox("리스크 조회 기준 기간", ["7일", "30일", "3개월 (90일)"], key="pf_기간")
+            st.number_input("회사 연간 목표 영업이익률 (%)", min_value=0, max_value=100, value=ss.get("pf_영업이익률", 5), key="pf_영업이익률")
+            st.number_input("회사 월 평균 총매출액 (원)", min_value=0, step=1000000, value=ss.get("pf_월매출", 100000000), key="pf_월매출")
+            st.multiselect("함께 가격 흐름을 비교해보고 싶은 다른 유종 (선택)", list(PRODUCTS.keys()), key="pf_비교유종")
+            
+            추가질문 = ss.get("biz_추가질문", [])
+            for q in 추가질문:
+                st.text_input(q["label"], key="pf_extra_" + q["id"])
+
+            c1, c2 = st.columns([1, 2])
             if c1.button("← 이전", use_container_width=True, key="ob_region_prev"):
-                ss.ob_step -= 1
+                ss.ob_step = 4
                 save_profile()
                 st.rerun()
-            if c2.button("건너뛰기", use_container_width=True, key="ob_region_skip"):
-                ss.onboarded = True
-                ss.nav = "home"
-                save_profile()
-                st.rerun()
-            if c3.button("완료 · 시작하기", type="primary", use_container_width=True, key="ob_region_done"):
-                ss.onboarded = True
-                ss.nav = "home"
-                save_profile()
+            if c2.button("분석 완료 및 대시보드 진입 🚀", type="primary", use_container_width=True, key="ob_region_done"):
+                ss["onboarded"] = True
+                ss["nav"] = "mypage"
+                save_profile() # 온보딩 데이터를 세션과 구글시트에 완벽하게 최종 확정
                 st.rerun()
 
 # ═════════════════════════════════════════════════════════════
-#  Lino 오버레이
+#  메인 화면 제어 (온보딩 여부 체크)
 # ═════════════════════════════════════════════════════════════
-def build_lino_ctx(M):
-    _be_txt = (format(M.마지노선, ",.0f") + "원/L (현재 대비 " +
-               format((M.마지노선-M.현재가)/M.현재가*100, "+.1f") + "% 여유)") if M.마지노선 else "계산 불가"
-    _fx_txt = (format(M._cur_fx, ",.1f") + "원") if M._cur_fx else "미제공"
-    ctx = (
-        "- 업종: " + M.업종명 + " (연료비 원가비중 " + str(M.연료비중) +
-        "%, 환율민감도 " + str(M.환율민감도) + "%)\n"
-        "- 주 유종: " + M.유종명 + ", 현재가 " + format(M.현재가, ",.0f") + "원/L\n"
-        "- 조회기간: " + M.기간옵션 + ", 기간 변동률 " + format(M.기간변동률, "+.1f") + "%\n"
-        "- 월 연료 사용량: " + format(M.월_사용량, ",.0f") + "L\n"
-        "- 현재 월 연료비(추정): " + format(M.현재가*M.월_사용량, ",.0f") + "원\n"
-        "- 판매가 전가율: " + str(M.전가율) + "%\n"
-        "- 이번 기간 실제 부담 변화(환율 포함): " + format(M.실제_손실_총, "+,.0f") +
-        "원 (매출의 " + format(M.매출대비, "+.2f") + "%)\n"
-        "- 연 환산 부담: " + format(M.실제_손실_총*12, "+,.0f") + "원\n"
-        "- 적자 전환 마지노선 유가: " + _be_txt + "\n"
-        "- 영업이익률: " + str(M.영업이익률) + "%\n"
-        "- 원/달러 환율: " + _fx_txt + "\n"
-        "- 리스크 점수: " + format(M.점수, ".0f") + "/100 (" + M.등급 + ")\n"
-        "- 월 매출: " + format(M.월_매출, ",.0f") + "원")
-    if M.owner_notes:
-        ctx += "\n- 대표님이 직접 입력한 추가 정보:\n" + M.owner_notes
-    return ctx
-
-def render_lino(M):
-    top1, top2 = st.columns([4, 1])
-    with top1:
-        st.markdown(
-            "<div style='display:flex;align-items:baseline;gap:9px'>"
-            "<span style='font-family:Georgia,serif;font-size:30px;font-weight:900;"
-            "letter-spacing:-1px;color:#191F28'>Lino</span>"
-            "<span style='font-size:13px;color:#8B95A1;font-weight:600'>AI 비서 · 유가·원가 상담</span>"
-            "</div>", unsafe_allow_html=True)
-    with top2:
-        if st.button("닫기", use_container_width=True, key="lino_close_top"):
-            ss.lino_open = False
-            st.rerun()
-
-    with st.expander("이렇게 물어보세요 (질문 예시)"):
-        st.markdown(
-            "- 지금 우리 회사 유가 리스크가 어느 정도인가요?\n"
-            "- 유가가 10% 오르면 우리 부담은 얼마나 늘어나나요?\n"
-            "- 지금 연료를 미리 사두는 게 나을까요?\n"
-            "- 거래처와 단가 협상은 어떻게 시작하면 좋을까요?\n"
-            "- 적자 전환 마지노선까지 얼마나 여유가 있나요?")
-
-    if not ss.lino_history:
-        with st.chat_message("assistant"):
-            st.write("안녕하세요, 대표님. 유가·원가 리스크를 함께 살펴드릴게요. 무엇이 궁금하신가요?")
-    for role, msg in ss.lino_history:
-        with st.chat_message("user" if role == "user" else "assistant"):
-            st.write(msg)
-
-    if st.button("대화 초기화", key="lino_reset"):
-        ss.lino_history = []
-        st.rerun()
-
-    q = st.chat_input("Lino에게 물어보기")
-    if q:
-        ss.lino_history.append(("user", q))
-        with st.spinner("Lino가 생각 중..."):
-            ans = lino_chat(ss.lino_history, q, build_lino_ctx(M))
-        ss.lino_history.append(("lino", ans))
-        st.rerun()
+if not ss.get("onboarded", False):
+    render_onboarding()
+    st.stop()
 
 # ═════════════════════════════════════════════════════════════
-#  개별 페이지
+#  마이페이지 대시보드 렌더링 영역
 # ═════════════════════════════════════════════════════════════
 def _banner_마지노선(M):
-    if not M.마지노선:
+    if M.마지노선 is None:
         return
     여유 = M.마지노선 - M.현재가
-    여유율 = 여유 / M.현재가 * 100 if M.현재가 else 0
-    색 = "#F04452" if 여유율 < 10 else ("#FFA000" if 여유율 < 25 else "#15B76E")
-    st.markdown(
-        "<div style='background:" + 색 + "12;border-left:6px solid " + 색 +
-        ";padding:14px 18px;border-radius:12px;margin-bottom:10px'>"
-        "<span style='font-size:14px;color:#6B7684'>우리 회사 적자 전환 마지노선 (" + M.유종명 + ")</span><br>"
-        "<span style='font-size:30px;font-weight:800;color:" + 색 + "'>" + format(M.마지노선, ",.0f") + "원/L</span>"
-        "<span style='font-size:15px;color:#6B7684'>  ·  현재가 대비 +" + format(여유, ",.0f") +
-        "원 (" + format(여유율, ".1f") + "% 여유)</span></div>", unsafe_allow_html=True)
+    if 여유 > 0:
+        st.success(f"💡 **적자 전환 마지노선**: {M.마지노선:,.0f}원/L (현재가 대비 +{여유:,.0f}원 여유가 있습니다.)")
+    else:
+        st.error(f"🚨 **적자 구조 진입**: 현재 유가({M.현재가:,.0f}원)가 손익분기 마지노선({M.마지노선:,.0f}원)을 초과하여 영업손실 위험 노출 상태입니다!")
 
-def page_home(M):
-    check_and_send_alert(M)
-
-    now = datetime.datetime.now()
-    시각 = now.hour
-    인사 = "좋은 아침입니다" if 5 <= 시각 < 12 else ("좋은 오후입니다" if 12 <= 시각 < 18 else "안녕하세요")
-    이름 = ss.get("user_first_name", "대표")
-    welcome = WELCOME_MSGS[ss["welcome_idx"]]
-    기준일 = M.view["DATE"].iloc[-1]
-    기준일_표시 = 기준일[4:6] + "/" + 기준일[6:8]
-
-    hl, hr = st.columns([3, 2])
-    with hl:
-        st.markdown("<div style='line-height:1.5;padding-top:2px'>"
-            "<span style='font-size:26px;font-weight:800;color:#191F28'>" + 인사 + ", " + 이름 + "님</span><br>"
-            "<span style='font-size:15px;color:#6B7684'>" + welcome + "</span></div>",
-            unsafe_allow_html=True)
-    with hr:
-        st.markdown(f"<div style='text-align:right;line-height:1.7;padding-top:6px'>"
-            f"<span style='font-size:13px;color:#8B95A1'>{now.strftime('%Y-%m-%d %H:%M')} 접속</span><br>"
-            f"<span style='font-size:13px;color:#8B95A1'>유가 기준일 <b>{기준일_표시}</b> · {M.기간옵션}치</span><br>"
-            f"<span style='font-size:13px;color:#8B95A1'>축적 데이터 {len(M.hist)}일</span></div>",
-            unsafe_allow_html=True)
+def page_dashboard(M):
+    기준일_표시 = str(M.view["DATE"].iloc[-1])
+    기준일_표시 = f"{기준일_표시[:4]}-{기준일_표시[4:6]}-{기준일_표시[6:8]}"
+    st.markdown(f"<div style='text-align:right;margin-top:-10px;margin-bottom:12px'>"
+                f"<span style='font-size:12px;color:#6B7684'>오피넷 공공데이터 기준일 <b>{기준일_표시}</b> · {M.기간옵션}치</span><br>"
+                f"<span style='font-size:13px;color:#8B95A1'>축적 데이터 {len(M.hist)}일</span></div>", unsafe_allow_html=True)
     st.divider()
-
     _banner_마지노선(M)
+    
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("현재 " + M.유종명, f"{M.현재가:,.0f}원", f"{M.하루변화:+.1f}원")
     c2.metric(M.기간옵션 + " 변동률", f"{M.기간변동률:+.1f}%")
     c3.metric("실제 부담(환율포함)", f"{M.실제_손실_총:+,.0f}원", f"매출의 {M.매출대비:+.2f}%")
     c4.metric("리스크 " + M.색, f"{M.점수:.0f}점", M.등급)
-    if M.환차_패널티 > 0:
-        st.caption("이 업종은 원자재를 달러로 수입해, 환율 상승분 약 " + format(M.환차_패널티, ",.0f") +
-                   "원이 추가 반영됐습니다. (유가+환율 이중고)")
 
+    if M.환차_패널티 > 0:
+        st.caption("이 업종은 원자재를 달러로 수입해, 환율 상승분 약 " + format(M.환차_패널티, ",.0f") + "원이 추가 반영됐습니다. (유가+환율 이중고)")
+        
     st.markdown("### AI 리스크 브리핑 & 권장사항")
     with st.container(border=True):
         ctx = (f"업종 {M.업종명}, {M.유종명} 현재가 {M.현재가:,.0f}원, {M.기간옵션} 변동률 {M.기간변동률:+.1f}%({M.방향}), "
@@ -1366,298 +1199,113 @@ def page_home(M):
                f"리스크 {M.점수:.0f}점({M.등급})")
         if st.button("AI 브리핑 생성하기", type="primary", use_container_width=True):
             with st.spinner("분석 중..."):
-                text, source = ai_briefing(ctx, M.recs)
-            st.markdown(text)
-            st.caption("생성 방식: " + source)
-        else:
-            st.markdown("**지금 우리 회사가 해야 할 일**")
-            for r in M.recs:
-                st.markdown("- " + r)
-    st.caption("좌측 메뉴에서 유가 추이·손익 판단·뉴스 등 상세 페이지를 확인하세요.")
+                text, src = ai_briefing(ctx, M.recs)
+                ss["ai_briefing_cached"] = text
+        if ss.get("ai_briefing_cached"):
+            st.markdown(ss["ai_briefing_cached"])
 
-def page_price(M):
-    st.subheader("유가 추이")
-    평소 = M.평소변동 if M.평소변동 else 1
-    if abs(M.하루변화) > 평소 * 1.5:
-        방향2 = "급등" if M.하루변화 > 0 else "급락"
-        st.error("경보: " + M.유종명 + " " + 방향2 + " 감지!")
-    else:
-        st.success("안정: " + M.유종명 + " 변동이 평소 수준입니다.")
-    show_fc = st.checkbox("추세 연장선 표시 (예측 아님, 참고용)", value=False)
-    fc = None
-    if show_fc:
-        res_fc = trend_forecast(M.view["PRICE"].values, 7)
-        if res_fc is not None:
-            fc = res_fc[0]
-    show_fig(styled_chart(M.view, M.유종명, M.기간옵션, fc))
-    _상태 = "평소보다 크게 움직이고 있어 주의가 필요합니다" if abs(M.하루변화) > 평소 * 1.5 else "평소와 비슷한 수준으로 움직이고 있습니다"
-    ai_explain(
-        f"이 그래프는 최근 {M.기간옵션} 동안 {M.유종명} 가격이 어떻게 바뀌었는지 보여줍니다. "
-        f"기간 시작 대비 <b>{M.방향}세로 {abs(M.기간변동률):.1f}%</b> 움직였고, 현재가는 <b>{M.현재가:,.0f}원</b>입니다. "
-        f"전일 대비로는 {_상태}."
-        + (" 점선은 최근 추세를 단순히 연장한 참고선일 뿐, 실제 미래 예측이 아닙니다." if fc is not None else ""))
+    st.markdown("### 가격 흐름 시각화 및 추세 연장")
+    f_series = None
+    if _llm_ready() and len(M.view) >= 3:
+        f_series, _ = trend_forecast(M.view["PRICE"].values, days=7)
+    fig = styled_chart(M.view, M.유종명, M.기간옵션, forecast=f_series)
+    show_fig(fig)
+
     if M.비교유종:
-        st.markdown("#### 유종 비교")
-        fig2, ax2 = plt.subplots(figsize=(10, 3.6))
-        팔레트 = ["#3182F6", "#191F28", "#15B76E", "#FFA000"]
-        for i, uj in enumerate([M.유종명] + [u for u in M.비교유종 if u != M.유종명]):
-            try:
-                d = get_oil(PRODUCTS[uj]).tail(len(M.view))
-                ax2.plot(range(len(d)), d["PRICE"].values, marker="o", markersize=3,
-                         color=팔레트[i % len(팔레트)], label=uj)
-            except Exception:
-                pass
-        ax2.legend(fontsize=9, frameon=False); ax2.grid(axis="y", alpha=0.3)
-        for s in ["top", "right"]:
-            ax2.spines[s].set_visible(False)
-        show_fig(fig2)
-        ai_explain(
-            f"위 그래프는 주 사용 유종 <b>{M.유종명}</b>과 선택하신 유종({', '.join(M.비교유종)})의 "
-            f"최근 가격 흐름을 나란히 비교한 것입니다. 선이 비슷하면 가격 상관성이 높다는 뜻이고, "
-            f"벌어지면 유종 교체 시 비용 구조가 달라질 수 있다는 의미입니다.")
+        st.markdown("#### 선택하신 비교 유종 트렌드")
+        for sub_name in M.비교유종:
+            if sub_name == M.유종명:
+                continue
+            sub_df = get_oil(PRODUCTS[sub_name])
+            sub_hist = update_history(sub_df, PRODUCTS[sub_name])
+            sub_view = sub_hist.tail(7 if M.기간옵션=="7일" else (30 if M.기간옵션=="30일" else 90))
+            sub_fig = styled_chart(sub_view, sub_name, M.기간옵션)
+            show_fig(sub_fig)
 
 def page_pl(M):
     st.subheader("우리 회사 손익 판단 AI")
     상태 = "손해" if M.실제_손실_총 > 0 else ("이익" if M.실제_손실_총 < 0 else "변화 없음")
     아이콘 = "🔴" if M.실제_손실_총 > 0 else ("🟢" if M.실제_손실_총 < 0 else "⚪")
+    
     j1, j2, j3 = st.columns(3)
     j1.metric("판정", 아이콘 + " " + 상태)
     j2.metric("실제 부담(환율포함)", f"{M.실제_손실_총:+,.0f}원")
     j3.metric("연 환산", f"{M.실제_손실_총*12:+,.0f}원")
-    ai_explain(
-        f"최근 유가·환율 변동을 반영한 결과, 우리 회사는 지금 <b>{상태}</b> 상태로 판정됩니다. "
-        f"판매가에 일부 반영(전가율 {M.전가율}%)하고도 실제로 떠안는 금액은 "
-        f"<b>{M.실제_손실_총:+,.0f}원</b>이며, 이는 월 매출의 <b>{M.매출대비:+.2f}%</b>에 해당합니다. "
-        f"같은 흐름이 1년 지속되면 연간 약 <b>{M.실제_손실_총*12:+,.0f}원</b> 규모입니다.")
-    if st.button("AI 손익 판단 받기", type="primary"):
-        with st.spinner("판단 중..."):
-            text, source = ai_profit_judge(M.업종명, M.연료비_변화, M.실제_손실_총, M.매출대비, M.기간변동률)
-        st.markdown(text)
-        st.caption("생성 방식: " + source)
+    
+    ai_explain(f"최근 유가·환율 변동을 반영한 결과, 우리 회사는 지금 <b>{상태}</b> 상태로 판정됩니다. "
+               f"판매가에 일부 반영(전가율 {M.전가율}%)하고도 실제로 떠안는 금액은 "
+               f"<b>{M.실제_손실_총:+,.0f}원</b>이며 이는 총매출의 <b>{M.매출대비:+.2f}%</b> 비중입니다.")
+    
+    if st.button("AI 정밀 재무 판정 받기", type="primary"):
+        with st.spinner("손익 구조를 심층 판정하고 있습니다..."):
+            txt, _ = ai_profit_judge(M.업종명, M.연료비_변화, M.실제_손실_총, M.매출대비, M.기간변동률)
+            ss["ai_profit_cached"] = txt
+    if ss.get("ai_profit_cached"):
+        st.info(ss["ai_profit_cached"])
 
-def page_be(M):
-    st.subheader("손익분기 유가")
-    st.caption("유가가 어디까지 오르면 이익이 0이 되는지 계산합니다.")
-    be = M.마지노선
-    if be:
-        여유 = be - M.현재가
-        여유율 = 여유 / M.현재가 * 100
-        b1, b2 = st.columns(2)
-        b1.metric("손익분기 유가", f"{be:,.0f}원/L", f"현재가 대비 +{여유:,.0f}원")
-        b2.metric("가격 여유", f"{여유율:+.1f}%")
-        if 여유율 < 10:
-            st.error(f"유가가 {여유율:.1f}%만 더 올라도 적자 전환됩니다. 매우 취약합니다.")
-        elif 여유율 < 25:
-            st.warning(f"유가가 {여유율:.1f}% 오르면 적자 전환됩니다. 대비가 필요합니다.")
-        else:
-            st.success(f"현재는 {여유율:.1f}%의 여유가 있습니다.")
-        st.caption("영업이익률·전가율·사용량을 마이페이지에서 조정하면 실시간 반영됩니다.")
-        ai_explain(
-            f"지금 {M.유종명} 가격은 <b>{M.현재가:,.0f}원</b>인데, 이 가격이 <b>{be:,.0f}원</b>까지 오르면 "
-            f"우리 회사 영업이익이 정확히 0원이 되는 지점(손익분기)입니다. 현재는 그 지점까지 "
-            f"<b>{여유율:+.1f}%</b>의 여유가 있으며, 이 값이 낮을수록 유가 상승에 취약합니다.")
-    else:
-        st.info("마이페이지에서 연료 사용량·전가율을 입력하면 계산됩니다.")
-
-def page_news(M):
-    st.subheader("실시간 유가 뉴스")
-    검색어 = st.selectbox("주제", ["국제유가", "유가 전망", "기름값", "환율 유가"], index=0)
-    news = get_news(검색어)
-    if news:
-        ai_explain(
-            f"‘{검색어}’ 관련 최신 뉴스 <b>{len(news)}건</b>을 모아왔습니다. 제목을 눌러 원문을 확인하고, "
-            f"우리 회사 유가 리스크(현재 {M.점수:.0f}점, {M.등급})와 함께 참고하시면 시장 분위기를 "
-            f"가늠하는 단서가 됩니다.")
-        for n in news:
-            st.markdown(f"**[{n['title']}]({n['link']})**")
-            if n["date"]:
-                st.caption(n["date"])
-            st.divider()
-    else:
-        st.info("뉴스를 불러오지 못했습니다.")
-
-def page_region(M):
-    st.subheader("지역별 유가 비교")
-    try:
-        sido_df = get_oil_sido(PRODUCTS[M.유종명])
-        col = "SIDONM" if "SIDONM" in sido_df.columns else sido_df.columns[0]
-        내값 = sido_df[sido_df[col].astype(str).str.contains(M.내지역)]
-        if not 내값.empty:
-            지역가 = float(내값["PRICE"].iloc[0])
-            st.metric(M.내지역 + " " + M.유종명, f"{지역가:,.0f}원",
-                      f"전국평균 대비 {지역가 - M.hist['PRICE'].mean():+.0f}원")
-        st.dataframe(sido_df[[col, "PRICE"]].sort_values("PRICE"), use_container_width=True, height=260)
-        if not 내값.empty:
-            _비교 = "비싼" if 지역가 > M.hist["PRICE"].mean() else "저렴한"
-            ai_explain(
-                f"<b>{M.내지역}</b>의 {M.유종명} 가격은 <b>{지역가:,.0f}원</b>으로, 전국 평균보다 "
-                f"<b>{abs(지역가 - M.hist['PRICE'].mean()):,.0f}원</b> {_비교} 편입니다. "
-                f"아래 표는 낮은 가격순 정렬이라, 위쪽일수록 그 지역 유가가 쌉니다.")
-    except Exception:
-        st.info("지역별 유가는 현재 제공되지 않습니다.")
-
-    st.divider()
-    st.subheader("국제 원유가 추이 (WTI, Brent)")
-    st.caption("yfinance를 통해 최근 1개월 국제유가를 자동으로 연동하여 보여줍니다.")
-
-    with st.spinner("국제유가 데이터를 불러오는 중입니다..."):
-        intl = get_intl_oil_data()
-
-    if not intl.empty:
-        값열 = [c for c in intl.columns if c != "날짜"]
-        fig_i, ax_i = plt.subplots(figsize=(10, 4.2))
-        fig_i.patch.set_facecolor("#ffffff"); ax_i.set_facecolor("#f4f6f8")
-        색상 = ["#3182F6", "#191F28", "#15B76E", "#FFA000"]
-
-        for i, c in enumerate(값열):
-            ax_i.plot(intl["날짜"], intl[c], linewidth=2.2,
-                      color=색상[i % len(색상)], label=c, marker="o", markersize=3)
-        ax_i.set_ylabel("가격 (USD/배럴)", fontsize=11, color="#6B7684")
-        ax_i.set_title("최근 1개월 국제유가 동향",
-                       fontsize=13, fontweight="bold", pad=12, loc="left")
-        ax_i.legend(loc="upper left", fontsize=9, frameon=False)
-        ax_i.grid(axis="y", color="#E5E8EB", linewidth=0.8, zorder=0)
-        for s in ["top", "right"]:
-            ax_i.spines[s].set_visible(False)
-        for s in ["left", "bottom"]:
-            ax_i.spines[s].set_color("#D1D6DB")
-        ax_i.tick_params(colors="#6B7684")
-        ax_i.xaxis.set_major_locator(mdates.AutoDateLocator(minticks=4, maxticks=8))
-        ax_i.xaxis.set_major_formatter(mdates.DateFormatter("%m/%d"))
-        fig_i.tight_layout()
-        show_fig(fig_i)
-
-        _시작 = intl[값열[0]].iloc[0]; _끝 = intl[값열[0]].iloc[-1]
-        _추세 = "상승" if _끝 > _시작 else ("하락" if _끝 < _시작 else "보합")
-        ai_explain(
-            f"자동 연동된 국제유가 데이터에 따르면, 최근 1개월간 <b>{_추세}</b> 흐름을 보였습니다"
-            f"({값열[0]} 기준 {_시작:,.2f} → {_끝:,.2f} $/bbl). "
-            f"국제유가는 보통 1~2주 시차를 두고 국내 유가에 반영되므로 선제적 리스크 관리에 유용합니다.")
-
-        st.caption("표: 일자별 국제유가 (단위: USD/배럴)")
-        표 = intl.copy()
-        표["날짜"] = 표["날짜"].dt.strftime("%Y-%m-%d")
-        col_cfg = {c: st.column_config.NumberColumn(c, format="$%.2f") for c in 값열}
-        st.dataframe(표.sort_values("날짜", ascending=False), use_container_width=True, hide_index=True, column_config=col_cfg)
-    else:
-        st.info("현재 국제 유가 데이터를 불러오지 못했습니다. 네트워크 상태나 yfinance 라이브러리 설치를 확인하세요.")
-
-    st.divider()
-    st.subheader("원/달러 환율")
-    환율, 환율날짜 = get_exchange()
-    if 환율:
-        st.metric("현재 환율", f"{환율:,.1f}원", help="기준일 " + 환율날짜)
-        if 환율 > 1350:
-            st.warning("환율이 높은 편입니다. 원화 부담이 커질 수 있습니다.")
-        ai_explain(
-            f"현재 원/달러 환율은 <b>{환율:,.1f}원</b>입니다. 원자재를 달러로 수입하는 업종일수록 "
-            f"환율이 오르면 유가가 그대로여도 원화 기준 원가가 늘어나는 '이중고'가 생길 수 있습니다. "
-            + ("지금 환율은 다소 높은 편이라 원가 부담이 커질 수 있는 구간입니다." if 환율 > 1350
-               else "지금 환율은 비교적 안정적인 구간입니다."))
-    else:
-        st.info("환율 데이터를 불러오지 못했습니다.")
-
-def page_report(M):
-    st.subheader("AI 심층 분석")
-    st.caption("현재 상황 진단 / 업종 영향 / 단기 대응 / 중장기 관리까지 상세 분석합니다.")
-    if st.button("AI 심층 분석 생성", type="primary"):
-        with st.spinner("AI가 분석 중..."):
-            _atext, _asrc = ai_deep_analysis(M.업종명, M.유종명, M.현재가, M.기간변동률, M.실제_손실_총,
-                                             M.매출대비, M.전가율, M.점수, M.등급, M.월_사용량)
-        ss["ai_analysis"] = _atext
-        st.markdown(_atext)
-        st.caption("생성 방식: " + _asrc)
-    elif ss.get("ai_analysis"):
+def page_deep(M):
+    st.subheader("업종별 유가 리스크 심층 진단")
+    st.caption("OREP 핵심 기능 · AI가 다차원 데이터와 외부 지표를 연동해 맞춤형 경영 대응 리포트를 생성합니다.")
+    
+    if st.button("AI 심층 분석 리포트 발행하기", type="primary", use_container_width=True):
+        with st.spinner("전략 리포트 인쇄 중..."):
+            txt, _ = ai_deep_analysis(M.업종명, M.유종명, M.현재가, M.기간변동률, M.실제_손실_총, M.매출대비, M.전가율, M.점수, M.등급, M.월_사용량)
+            ss["ai_analysis"] = txt
+            
+    if ss.get("ai_analysis"):
         st.markdown(ss["ai_analysis"])
-
-    st.divider()
-    st.subheader("PDF 리포트")
-    st.caption("AI 심층 분석을 생성했다면 리포트에 함께 포함됩니다. 회의·협상용으로 저장하세요.")
-    pdf = make_pdf_report(M.업종명, M.유종명, M.현재가, M.기간변동률, M.실제_손실_총, M.매출대비,
-                          M.점수, M.등급, M.recs, ss.get("ai_analysis"), M.마지노선)
-    st.download_button("PDF 리포트 내려받기", pdf, "OREP_리포트.pdf", "application/pdf")
-
-    st.divider()
-    st.subheader("유가 경보 이메일 발송 (수동)")
-    st.caption("등록된 이메일 외 다른 주소로 PDF 리포트와 현재 리스크를 전송합니다.")
-    받는메일 = st.text_input("받을 이메일 주소", value=ss.get("user_email", ""))
-    if st.button("리포트 메일 수동 보내기", type="primary"):
-        if SMTP_EMAIL.startswith("여기에"):
-            st.warning("발신 계정(SMTP_EMAIL/PASSWORD)이 설정되지 않았습니다.")
-        elif not 받는메일:
-            st.info("받을 이메일을 입력하세요.")
-        else:
-            try:
-                본문 = ("[OREP 유가 리스크 경보]\n\n업종: " + M.업종명 + "\n유종: " + M.유종명 +
-                       " / 현재가 " + format(M.현재가, ",.0f") + "원\n" + M.기간옵션 + " 변동률: " +
-                       format(M.기간변동률, "+.1f") + "%\n실제 부담 변화: " + format(M.실제_손실_총, "+,.0f") +
-                       "원\n리스크 점수: " + format(M.점수, ".0f") + "/100 (" + M.등급 + ")\n\n"
-                       "[권장 조치]\n" + "\n".join("- " + r.replace("**", "") for r in M.recs) +
-                       "\n\n첨부된 PDF 리포트를 확인하세요.\n- OREP")
-                pdf첨부 = make_pdf_report(M.업종명, M.유종명, M.현재가, M.기간변동률, M.실제_손실_총, M.매출대비,
-                                        M.점수, M.등급, M.recs, ss.get("ai_analysis"), M.마지노선)
-                send_alert_email(받는메일, "[OREP] 유가 리스크 리포트", 본문,
-                                 pdf_bytes=pdf첨부.getvalue(), filename="OREP_report.pdf")
-                st.success("리포트를 보냈습니다. (PDF 첨부) : " + 받는메일)
-            except Exception as e:
-                st.error("발송 실패: " + str(e))
-
-def page_mypage(M):
-    st.subheader("마이페이지 · 상세 설정")
-    st.caption("여기서 값을 바꾸면 모든 페이지에 실시간으로 반영됩니다.")
-
-    with st.container(border=True):
-        st.markdown("**기본 사용자 정보**")
-        a1, a2, a3 = st.columns(3)
-        with a1:
-            st.text_input("성 (Last Name)", key="user_last_name")
-        with a2:
-            st.text_input("이름 (First Name)", key="user_first_name")
-        with a3:
-            st.text_input("조기 경보 알림 이메일", key="user_email")
-
-    with st.container(border=True):
-        st.markdown("**우리 회사 정보 요약**")
-        st.text_input("업종명", key="pf_업종명")
-        if M.특징:
-            st.caption("AI 요약 · " + M.특징)
-        with st.expander("맨 처음 입력했던 사업 설명 보기"):
-            st.write(ss.get("biz_desc", "") or "_(입력 내용 없음)_")
-        st.caption("계산 방식 · " + TEMPLATE_LABELS.get(M.계산방식, M.계산방식))
-        if st.button("업종 다시 설명하기 (AI가 질문을 새로 준비해요)"):
-            ss.onboarded = False
-            ss.ob_step = 0
-            save_profile()
-            st.rerun()
-
-    st.markdown("#### 연료 사용량 (AI 맞춤 질문)")
-    override = st.checkbox("정확한 수치를 모르겠어요 → 월 유류비 총 지출액으로 대신 입력할게요",
-                            key="pf_override_spend")
-    if override and not ss.get("_applied_override"):
-        if ss["biz_계산방식"] != "spend_based":
-            ss["_orig_계산방식"] = ss["biz_계산방식"]
-            ss["_orig_질문들"] = ss["biz_질문들"]
-            role = "monthly_spend"
-            flabel, fph, funit, fdefault, ftype = TEMPLATES["spend_based"]["fallback"][role]
-            ss["biz_계산방식"] = "spend_based"
-            ss["biz_질문들"] = [{"role": role, "label": flabel, "placeholder": fph,
-                               "unit": funit, "default": fdefault, "type": ftype}]
-            ss["pf_role_" + role] = fdefault
-        ss["_applied_override"] = True
-    elif not override and ss.get("_applied_override"):
-        if "_orig_계산방식" in ss:
-            ss["biz_계산방식"] = ss["_orig_계산방식"]
-            ss["biz_질문들"] = ss["_orig_질문들"]
-        ss["_applied_override"] = False
-
-    cols = st.columns(2)
-    for i, q in enumerate(ss.get("biz_질문들", [])):
-        with cols[i % 2]:
-            label = q["label"] + (f"  ({q['unit']})" if q.get("unit") else "")
-            if q["type"] == "float":
-                st.number_input(label, min_value=0.0, step=0.1, key="pf_role_" + q["role"])
+        st.divider()
+        st.subheader("PDF 국가 공인 규격 리포트 추출")
+        pdf = make_pdf_report(M.업종명, M.유종명, M.현재가, M.기간변동률, M.실제_손실_총, M.매출대비, M.점수, M.등급, M.recs, ss.get("ai_analysis"), M.마지노선)
+        st.download_button("PDF 리포트 내려받기", pdf, "OREP_리포트.pdf", "application/pdf")
+        
+        st.divider()
+        st.subheader("유가 경보 이메일 발송 (수동)")
+        st.caption("등록된 이메일 외 다른 주소로 PDF 리포트와 현재 리스크를 전송합니다.")
+        받는메일 = st.text_input("받을 이메일 주소", value=ss.get("user_email", ""))
+        if st.button("리포트 메일 수동 보내기", type="primary"):
+            if SMTP_EMAIL.startswith("여기에"):
+                st.warning("발신 계정(SMTP_EMAIL/PASSWORD)이 설정되지 않았습니다.")
+            elif not 받는메일:
+                st.info("받을 이메일을 입력하세요.")
             else:
-                st.number_input(label, min_value=0, step=1, key="pf_role_" + q["role"])
+                try:
+                    본문 = ("[OREP 유가 리스크 경보]\n\n업종: " + M.업종명 + "\n유종: " + M.유종명 + " / 현재가 " + format(M.현재가, ",.0f") + "원\n" + M.기간옵션 + " 변동률: " + format(M.기간변동률, "+.1f") + "%\n실제 부담 변화: " + format(M.실제_손실_총, "+,.0f") + "원\n리스크 점수: " + format(M.점수, ".0f") + "/100 (" + M.등급 + ")\n\n" "[권장 조치]\n" + "\n".join("- " + r.replace("**", "") for r in M.recs) + "\n\n첨부된 PDF 리포트를 확인하세요.\n- OREP")
+                    pdf첨부 = make_pdf_report(M.업종명, M.유종명, M.현재가, M.기간변동률, M.실제_손실_총, M.매출대비, M.점수, M.등급, M.recs, ss.get("ai_analysis"), M.마지노선)
+                    send_alert_email(받는메일, "[OREP] 유가 리스크 리포트", 본문, pdf_bytes=pdf첨부.getvalue(), filename="OREP_report.pdf")
+                    st.success("리포트를 보냈습니다. (PDF 첨부) : " + 받는메일)
+                except Exception as ex:
+                    st.error("메일 발송 실패: " + str(ex))
+
+def page_news():
+    st.subheader("유가 동향 및 환율 실시간 지표")
+    n_list = get_news()
+    if n_list:
+        for item in n_list:
+            st.markdown(f"🔗 [{item['title']}]({item['link']}) <span style='font-size:11px;color:#8B95A1'>({item['date']})</span>", unsafe_allow_html=True)
+    else:
+        st.write("실시간 뉴스를 가져오지 못했습니다.")
+
+    st.divider()
+    st.subheader("국제 원유 및 경제 지표")
+    intl = get_intl_oil_data()
+    if not intl.empty:
+        st.dataframe(intl.tail(10), use_container_width=True)
+    else:
+        st.caption("YFinance 금융망 연동 대기 중입니다.")
+
+def page_profile_edit():
+    st.subheader("회사 원가 지표 고도화 및 프로필 변경")
+    st.caption("언제든 비즈니스 정보를 변경할 수 있으며, 변경된 즉시 모든 재무 시뮬레이션에 자동 반영됩니다.")
+    
+    st.markdown("#### 비즈니스 원가 입력 문항")
+    질문들 = ss.get("biz_질문들", [])
+    for q in 질문들:
+        label = q["label"] + (f" ({q['unit']})" if q.get("unit") else "")
+        if q["type"] == "float":
+            st.number_input(label, min_value=0.0, step=0.1, key="pf_role_" + q["role"])
+        else:
+            st.number_input(label, min_value=0, step=1, key="pf_role_" + q["role"])
 
     if ss.get("biz_추가질문"):
         st.markdown("##### 추가 참고 정보")
@@ -1680,88 +1328,48 @@ def page_mypage(M):
         st.selectbox("주 사용 유종", list(PRODUCTS.keys()), key="pf_유종명")
         st.number_input("영업이익률 (%)", min_value=0, max_value=100, step=1, key="pf_영업이익률")
     with b:
-        st.number_input("월 매출 (원)", min_value=0, step=1000000, key="pf_월매출")
-        st.selectbox("우리 지역(시도)", SIDO_LIST, key="pf_지역")
+        st.number_input("월 평균 매출액 (원)", min_value=0, step=1000000, key="pf_월매출")
+        st.selectbox("사업장 위치", SIDO_LIST, key="pf_지역")
 
-    st.markdown("#### 조회 설정 · 추가 정보")
-    st.radio("기본 조회 기간", ["7일", "30일", "전체"], horizontal=True, key="pf_기간")
-    st.multiselect("함께 비교할 유종", list(PRODUCTS.keys()), key="pf_비교유종")
-    st.text_area("추가 정보 (Lino 상담 시 참고)", key="pf_notes", height=110,
-                 placeholder="예: 특정 거래처와 3개월 고정단가 계약 중 / 성수기엔 물량 2배 등")
-
-    st.markdown("#### 현재 산출값")
-    st.write(f"- 월 연료 사용량(산출): 약 **{M.월_사용량:,.0f} L**")
-    st.write(f"- 현재 월 연료비(추정): 약 **{M.현재가*M.월_사용량:,.0f} 원**")
-    st.write(f"- 리스크 점수: **{M.점수:.0f}점 ({M.등급})** · 축적 데이터 **{len(M.hist)}일**")
-
-def page_log(M):
-    st.subheader("조회 기록")
-    log = load_log()
-    if not log.empty:
-        st.dataframe(log.iloc[::-1].reset_index(drop=True), use_container_width=True, height=300)
-        lb1, lb2 = st.columns(2)
-        lb1.download_button("기록 CSV 내려받기", log.to_csv(index=False).encode("utf-8-sig"),
-                            "orep_query_log.csv", "text/csv", use_container_width=True)
-        if lb2.button("조회 기록 초기화", use_container_width=True):
-            if os.path.exists(LOG_FILE):
-                os.remove(LOG_FILE)
-            st.rerun()
-    else:
-        st.info("아직 기록이 없습니다.")
-    st.divider()
-    st.write("**업종:** " + M.업종명 + "  ·  **유종:** " + M.유종명)
-    st.write(f"**월 연료 사용량(산출):** 약 {M.월_사용량:,.0f} L  ·  **축적 데이터:** {len(M.hist)}일치")
-
-# ═════════════════════════════════════════════════════════════
-#  라우팅
-# ═════════════════════════════════════════════════════════════
-if not ss.onboarded:
-    render_onboarding()
-    st.stop()
-
-NAV = [("홈 · 요약", "home"), ("유가 추이", "price"), ("손익 판단", "pl"),
-       ("손익 분기", "be"), ("뉴스", "news"), ("지역·환율", "region"),
-       ("리포트·알림", "report"), ("마이페이지", "mypage"), ("기록", "log")]
-
-with st.sidebar:
-    st.markdown(
-        "<div style='line-height:1.0;padding:2px 0 8px 0'>"
-        "<span style='font-size:30px;font-weight:900;letter-spacing:-1.5px;color:#3182F6;"
-        "font-family:Georgia,serif'>OREP<span style='color:#191F28'>.</span></span><br>"
-        "<span style='font-size:10px;color:#8B95A1;letter-spacing:2.5px;font-weight:700'>"
-        "OIL RISK EDURE PROGRAM</span></div>", unsafe_allow_html=True)
-    st.divider()
-    for label, key in NAV:
-        active = (ss.nav == key)
-        if st.button(label, key="nav_" + key, use_container_width=True,
-                     type="primary" if active else "secondary"):
-            ss.nav = key
-            ss.lino_open = False
-            save_profile()
-            st.rerun()
-    st.divider()
-    st.markdown(
-        "<style>"
-        "div[data-testid='stSidebar'] .lino-btn button{"
-        "background:linear-gradient(135deg,#3182F6,#1B64DA)!important;color:#fff!important;"
-        "border:none!important;border-radius:16px!important;font-weight:800!important;"
-        "padding:.7rem 1rem!important;box-shadow:0 4px 14px rgba(49,130,246,.28)!important;"
-        "font-family:'Pretendard',sans-serif!important;letter-spacing:.2px!important;}"
-        "div[data-testid='stSidebar'] .lino-btn button:hover{"
-        "background:linear-gradient(135deg,#2272EB,#1858C6)!important;}"
-        "</style><div class='lino-btn'>", unsafe_allow_html=True)
-    if st.button("💬  Lino 비서 불러오기", key="open_lino", use_container_width=True):
-        ss.lino_open = True
+    if st.button("수정된 정보 영구 저장 및 동기화", type="primary", use_container_width=True):
+        save_profile()
+        st.success("데이터가 안전하게 동기화되었습니다.")
         st.rerun()
+
+# ═════════════════════════════════════════════════════════════
+#  사이드바 메뉴 및 레이아웃 제어
+# ═════════════════════════════════════════════════════════════
+with st.sidebar:
+    st.markdown("<div style='padding:14px 0 6px 0'><span style='font-family:Georgia,serif;font-size:28px;font-weight:900;color:#3182F6'>OREP.</span></div>", unsafe_allow_html=True)
+    st.caption(f"반가워요, **{ss.get('user_last_name','')} {ss.get('user_first_name','')}** 대표님")
+    
+    st.divider()
+    if st.button("📊 실시간 유가 대시보드", use_container_width=True):
+        ss["nav"] = "mypage"; st.rerun()
+    if st.button("📉 우리 회사 손익 판단 AI", use_container_width=True):
+        ss["nav"] = "pl_judge"; st.rerun()
+    if st.button("🔍 리스크 심층 분석 리포트", use_container_width=True):
+        ss["nav"] = "deep_report"; st.rerun()
+    if st.button("🌐 국제 지표 & 뉴스", use_container_width=True):
+        ss["nav"] = "news"; st.rerun()
+    if st.button("⚙️ 회사 프로필 원가 수정", use_container_width=True):
+        ss["nav"] = "profile_edit"; st.rerun()
+        
+    st.divider()
+    if st.button("💬 Lino AI 비서 소환", type="primary", use_container_width=True):
+        ss["lino_open"] = not ss.get("lino_open", False)
+        st.rerun()
+        
     st.markdown("</div>", unsafe_allow_html=True)
     st.caption("유가·원가 리스크를 상담하는 AI 비서")
-
+    
     st.divider()
     st.caption("👤 " + _current_user_id())
     if st.button("로그아웃", key="do_logout", use_container_width=True):
         save_profile()
         ss["auth_user"] = None
         st.rerun()
+        
     with st.expander("내 데이터 초기화"):
         st.caption("내 계정에 저장된 프로필을 지우고 온보딩을 처음부터 다시 시작합니다.")
         if st.button("초기화 후 다시 시작", key="reset_profile", use_container_width=True):
@@ -1776,6 +1384,7 @@ with st.sidebar:
                     pass
             st.rerun()
 
+# 지표 메트릭스 계산 후 뷰 표출
 M = None
 try:
     M = compute_metrics()
@@ -1792,15 +1401,57 @@ if ss.get("_last_logkey") != _logkey:
     save_log(M.업종명, M.유종명, M.현재가, M.기간옵션)
     ss["_last_logkey"] = _logkey
 
-if ss.lino_open:
-    render_lino(M)
-    st.stop()
+check_and_trigger_alert(M)
 
-PAGES = {"home": page_home, "price": page_price, "pl": page_pl, "be": page_be,
-         "news": page_news, "region": page_region, "report": page_report,
-         "mypage": page_mypage, "log": page_log}
-PAGES.get(ss.nav, page_home)(M)
-
-save_profile()
-
-st.caption("© 2026 OREP · Oil Risk Edure Program")
+# Lino 채팅 창 사이드 오픈 레이아웃 처리
+if ss.get("lino_open", False):
+    c_main, c_lino = st.columns([1.6, 1])
+    with c_main:
+        if ss["nav"] == "mypage": page_dashboard(M)
+        elif ss["nav"] == "pl_judge": page_pl(M)
+        elif ss["nav"] == "deep_report": page_deep(M)
+        elif ss["nav"] == "news": page_news()
+        elif ss["nav"] == "profile_edit": page_profile_edit()
+    with c_lino:
+        def render_lino(M):
+            top1, top2 = st.columns([4, 1])
+            with top1:
+                st.markdown("<div style='display:flex;align-items:baseline;gap:9px'><span style='font-family:Georgia,serif;font-size:30px;font-weight:900;color:#191F28'>Lino</span><span style='font-size:13px;color:#8B95A1;font-weight:600'>AI 비서 · 유가·원가 상담</span></div>", unsafe_allow_html=True)
+            with top2:
+                if st.button("닫기", use_container_width=True, key="lino_close_top"):
+                    ss.lino_open = False
+                    st.rerun()
+            
+            with st.expander("이렇게 물어보세요 (질문 예시)"):
+                st.markdown("- 지금 우리 회사 유가 리스크가 어느 정도인가요?\n- 유가가 10% 오르면 우리 부담은 얼마나 늘어나나요?\n- 지금 연료를 미리 사두는 게 나을까요?")
+            
+            if not ss.lino_history:
+                with st.chat_message("assistant"):
+                    st.write("안녕하세요, 대표님. 유가·원가 리스크를 함께 살펴드릴게요. 무엇이 궁금하신가요?")
+            
+            for role, msg in ss.lino_history:
+                with st.chat_message("user" if role == "user" else "assistant"):
+                    st.write(msg)
+                    
+            if st.button("대화 초기화", key="clear_lino"):
+                ss.lino_history = []
+                st.rerun()
+                
+            if prompt := st.chat_input("Lino에게 유가 원가 리스크 물어보기"):
+                ss.lino_history.append(("user", prompt))
+                with st.chat_message("user"):
+                    st.write(prompt)
+                with st.chat_message("assistant"):
+                    with st.spinner("답변 생각 중..."):
+                        ctx_summary = (f"업종 {M.업종명}, {M.유종명} 현재가 {M.현재가:,.0f}원, 월 연료 {M.월_사용량:,.0f}L, 전가율 {M.전가율}%, 리스크 {M.점수:.0f}점")
+                        res_lino = lino_chat(ss.lino_history, prompt, ctx_summary)
+                        st.write(res_lino)
+                ss.lino_history.append(("assistant", res_lino))
+                st.rerun()
+        render_lino(M)
+else:
+    if ss["nav"] == "mypage": page_dashboard(M)
+    elif ss["nav"] == "pl_judge": page_pl(M)
+    elif ss["nav"] == "deep_report": page_deep(M)
+    elif ss["nav"] == "news": page_news()
+    elif ss["nav"] == "profile_edit": page_profile_edit()
