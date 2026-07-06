@@ -728,12 +728,6 @@ def _current_user_id():
 # ═════════════════════════════════════════════════════════════
 _first_boot = "_boot_done" not in ss
 ss.setdefault("_boot_done", True)
-ss.setdefault("onboarded", False)
-ss.setdefault("ob_step", 0)
-ss.setdefault("nav", "home")
-ss.setdefault("lino_open", False)
-ss.setdefault("lino_history", [])
-ss.setdefault("ai_analysis", None)
 
 PROFILE_KEY_PREFIXES = ("pf_", "biz_", "user_")
 
@@ -743,10 +737,8 @@ def _profile_path():
     return os.path.join(PROFILE_DIR, safe + ".json")
 
 def save_profile():
-    """온보딩·마이페이지에서 입력한 프로필 값을 로그인 계정별 파일에 저장한다.
-    (기존에는 ss.backup이라는 세션 내부 dict에만 백업해서, 세션이 새로
-    시작되면 백업 자체도 함께 사라져 값이 유지되지 않는 문제가 있었음)"""
-    data = {k: v for k, v in ss.items() if k.startswith(PROFILE_KEY_PREFIXES)}
+    """온보딩·마이페이지에서 입력한 프로필 값을 로그인 계정별 파일에 저장한다."""
+    data = {k: v for k, v in ss.items() if k.startswith(PROFILE_KEY_PREFIXES) or k in ("onboarded", "ob_step")}
     try:
         with open(_profile_path(), "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, default=str)
@@ -763,15 +755,20 @@ def load_profile():
             return None
     return None
 
-# 같은 아이디로 새 세션이 시작됐는데 아직 온보딩 전이라면, 이 계정에
-# 저장된 프로필이 있는지 확인해서 있으면 그대로 복원한다 → 온보딩 값이
-# 마이페이지 등 어디서든 그대로 이어져 보인다.
-if _first_boot and not ss.onboarded:
-    _saved_profile = load_profile()
-    if _saved_profile:
-        for k, v in _saved_profile.items():
+# Streamlit이 화면 이동(rerun) 시 메모리 최적화를 위해 위젯 데이터를
+# 강제 삭제하는 현상을 막기 위해, 매번 디스크에서 불러와 빈 곳을 복구한다.
+_saved_profile = load_profile()
+if _saved_profile:
+    for k, v in _saved_profile.items():
+        if k not in ss:
             ss[k] = v
-        ss["onboarded"] = True
+
+ss.setdefault("onboarded", False)
+ss.setdefault("ob_step", 0)
+ss.setdefault("nav", "home")
+ss.setdefault("lino_open", False)
+ss.setdefault("lino_history", [])
+ss.setdefault("ai_analysis", None)
 
 _REQUIRED_PROFILE_DEFAULTS = {
     "user_first_name": "", "user_email": "",
@@ -780,10 +777,7 @@ _REQUIRED_PROFILE_DEFAULTS = {
     "pf_전가율": 30, "pf_연료비중": 10, "pf_환율민감도": 0,
     "pf_영업이익률": 5, "pf_월매출": 0, "pf_지역": "서울", "pf_기간": "7일",
 }
-# (예전에는 필수 키가 하나라도 비어있으면 onboarded를 False로 되돌려
-#  온보딩 1단계로 다시 보냈는데, 이게 마지막 단계 완료 직후에도 잘못
-#  발동해서 "완료 -> 1단계로 복귀" 증상을 일으켰다. 이제는 강제로
-#  되돌리지 않고, 비어있는 값만 안전한 기본값으로 채운다.)
+
 if ss.onboarded:
     for _k, _v in _REQUIRED_PROFILE_DEFAULTS.items():
         ss.setdefault(_k, _v)
@@ -903,7 +897,7 @@ def check_and_send_alert(M):
     급변감지 = False
     이유 = ""
 
-    # 1. 일일 가격 변동폭이 평소의 3배 이상인 경우 (기준 상향 조정)
+    # 1. 일일 가격 변동폭이 평소의 3배 이상인 경우
     if abs(M.하루변화) >= 평소 * 3:
         급변감지 = True
         이유 = f"일일 가격 변동폭({M.하루변화:+.1f}원)이 평소({평소:.1f}원) 대비 3배 이상 크게 발생했습니다."
@@ -912,7 +906,7 @@ def check_and_send_alert(M):
         급변감지 = True
         이유 = f"설정하신 기간 내 누적 변동률({M.기간변동률:+.1f}%)이 5%를 초과했습니다."
 
-    # 중복 발송 방지 로직: 이전 알림 발송 시점의 가격과 비교하여 2% 이상 추가 변동이 없으면 발송 무시
+    # 중복 발송 방지 로직
     last_price = ss.get("last_alert_price")
     if last_price and 급변감지:
         if abs(M.현재가 - last_price) / last_price * 100 < 2.0:
@@ -928,7 +922,7 @@ def check_and_send_alert(M):
                f"감사합니다.")
         try:
             send_alert_email(email, 제목, 본문)
-            ss["last_alert_price"] = M.현재가  # 알림을 보낸 기준 가격으로 업데이트
+            ss["last_alert_price"] = M.현재가
             st.toast("⚠️ 유가 큰 변동이 감지되어 조기 경보 이메일이 자동 발송되었습니다.")
         except Exception as e:
             pass
@@ -972,7 +966,9 @@ def render_onboarding():
                 elif not ss.get("user_email"):
                     st.warning("경보 알림을 받을 이메일을 입력해주세요. (필수)")
                 else:
-                    ss.ob_step += 1; st.rerun()
+                    ss.ob_step += 1
+                    save_profile()
+                    st.rerun()
 
         elif step == "intro":
             st.markdown("<div style='text-align:center'>"
@@ -992,7 +988,9 @@ def render_onboarding():
             st.caption("이 내용은 나중에 Lino 비서가 상담할 때도 함께 참고해요.")
             c1, c2 = st.columns([1, 2])
             if c1.button("← 이전", use_container_width=True, key="ob_intro_prev"):
-                ss.ob_step -= 1; st.rerun()
+                ss.ob_step -= 1
+                save_profile()
+                st.rerun()
             if c2.button("다음 →", type="primary", use_container_width=True, key="ob_intro_next"):
                 if not ss.get("ob_desc", "").strip():
                     st.warning("사업 내용을 한두 줄이라도 적어주세요. (필수)")
@@ -1001,6 +999,7 @@ def render_onboarding():
                         result = analyze_business(ss["ob_desc"])
                     apply_business_analysis(result, ss["ob_desc"])
                     ss.ob_step += 1
+                    save_profile()
                     st.rerun()
 
         elif step == "confirm":
@@ -1017,16 +1016,20 @@ def render_onboarding():
             st.caption("업종을 정해진 목록에서 고른 게 아니라, AI가 설명을 읽고 자유롭게 지어낸 이름이에요.")
             c1, c2 = st.columns([1, 2])
             if c1.button("← 이전", use_container_width=True, key="ob_confirm_prev"):
-                ss.ob_step -= 1; st.rerun()
+                ss.ob_step -= 1
+                save_profile()
+                st.rerun()
             if c2.button("다음 →", type="primary", use_container_width=True, key="ob_confirm_next"):
-                ss.ob_step += 1; st.rerun()
+                ss.ob_step += 1
+                save_profile()
+                st.rerun()
 
         elif step == "usage":
             st.markdown("<div style='text-align:center'>"
                         "<span style='font-size:24px;font-weight:800;color:#191F28'>"
                         "연료 사용량을 알려주세요</span></div>", unsafe_allow_html=True)
             st.markdown(f"<div style='text-align:center;color:#6B7684;margin:6px 0 16px 0'>"
-                        f"AI가 <b>{ss['pf_업종명']}</b>에 맞춰 준비한 질문이에요. (필수)</div>",
+                        f"AI가 <b>{ss.get('pf_업종명','우리 사업체')}</b>에 맞춰 준비한 질문이에요. (필수)</div>",
                         unsafe_allow_html=True)
 
             override = st.checkbox(
@@ -1049,7 +1052,7 @@ def render_onboarding():
                     ss["biz_질문들"] = ss["_orig_질문들"]
                 ss["_applied_override"] = False
 
-            for q in ss["biz_질문들"]:
+            for q in ss.get("biz_질문들", []):
                 label = q["label"] + (f"  ({q['unit']})" if q.get("unit") else "")
                 if q["type"] == "float":
                     st.number_input(label, min_value=0.0, step=0.1, key="pf_role_" + q["role"])
@@ -1065,9 +1068,13 @@ def render_onboarding():
 
             c1, c2 = st.columns([1, 2])
             if c1.button("← 이전", use_container_width=True, key="ob_usage_prev"):
-                ss.ob_step -= 1; st.rerun()
+                ss.ob_step -= 1
+                save_profile()
+                st.rerun()
             if c2.button("다음 →", type="primary", use_container_width=True, key="ob_usage_next"):
-                ss.ob_step += 1; st.rerun()
+                ss.ob_step += 1
+                save_profile()
+                st.rerun()
 
         elif step == "sales":
             st.markdown("<div style='text-align:center'>"
@@ -1080,12 +1087,16 @@ def render_onboarding():
             st.number_input("영업이익률 (%)", min_value=0, max_value=100, step=1, key="pf_영업이익률")
             c1, c2 = st.columns([1, 2])
             if c1.button("← 이전", use_container_width=True, key="ob_sales_prev"):
-                ss.ob_step -= 1; st.rerun()
+                ss.ob_step -= 1
+                save_profile()
+                st.rerun()
             if c2.button("다음 →", type="primary", use_container_width=True, key="ob_sales_next"):
                 if ss["pf_월매출"] <= 0:
                     st.warning("월 매출을 입력해주세요. (필수)")
                 else:
-                    ss.ob_step += 1; st.rerun()
+                    ss.ob_step += 1
+                    save_profile()
+                    st.rerun()
 
         elif step == "tune":
             st.markdown("<div style='text-align:center'>"
@@ -1102,11 +1113,17 @@ def render_onboarding():
 
             c1, c2, c3 = st.columns([1, 1, 1.4])
             if c1.button("← 이전", use_container_width=True, key="ob_tune_prev"):
-                ss.ob_step -= 1; st.rerun()
+                ss.ob_step -= 1
+                save_profile()
+                st.rerun()
             if c2.button("건너뛰기", use_container_width=True, key="ob_tune_skip"):
-                ss.ob_step += 1; st.rerun()
+                ss.ob_step += 1
+                save_profile()
+                st.rerun()
             if c3.button("다음 →", type="primary", use_container_width=True, key="ob_tune_next"):
-                ss.ob_step += 1; st.rerun()
+                ss.ob_step += 1
+                save_profile()
+                st.rerun()
 
         elif step == "region":
             st.markdown("<div style='text-align:center'>"
@@ -1122,11 +1139,19 @@ def render_onboarding():
                          placeholder="예) 특정 거래처와 3개월 고정단가 계약 중 / 성수기엔 물량 2배 등")
             c1, c2, c3 = st.columns([1, 1, 1.4])
             if c1.button("← 이전", use_container_width=True, key="ob_region_prev"):
-                ss.ob_step -= 1; st.rerun()
+                ss.ob_step -= 1
+                save_profile()
+                st.rerun()
             if c2.button("건너뛰기", use_container_width=True, key="ob_region_skip"):
-                ss.onboarded = True; ss.nav = "home"; st.rerun()
+                ss.onboarded = True
+                ss.nav = "home"
+                save_profile()
+                st.rerun()
             if c3.button("완료 · 시작하기", type="primary", use_container_width=True, key="ob_region_done"):
-                ss.onboarded = True; ss.nav = "home"; st.rerun()
+                ss.onboarded = True
+                ss.nav = "home"
+                save_profile()
+                st.rerun()
 
 # ═════════════════════════════════════════════════════════════
 #  Lino 오버레이
@@ -1166,7 +1191,8 @@ def render_lino(M):
             "</div>", unsafe_allow_html=True)
     with top2:
         if st.button("닫기", use_container_width=True, key="lino_close_top"):
-            ss.lino_open = False; st.rerun()
+            ss.lino_open = False
+            st.rerun()
 
     with st.expander("이렇게 물어보세요 (질문 예시)"):
         st.markdown(
@@ -1184,7 +1210,8 @@ def render_lino(M):
             st.write(msg)
 
     if st.button("대화 초기화", key="lino_reset"):
-        ss.lino_history = []; st.rerun()
+        ss.lino_history = []
+        st.rerun()
 
     q = st.chat_input("Lino에게 물어보기")
     if q:
@@ -1512,7 +1539,10 @@ def page_mypage(M):
             st.write(ss.get("biz_desc", "") or "_(입력 내용 없음)_")
         st.caption("계산 방식 · " + TEMPLATE_LABELS.get(M.계산방식, M.계산방식))
         if st.button("업종 다시 설명하기 (AI가 질문을 새로 준비해요)"):
-            ss.onboarded = False; ss.ob_step = 0; st.rerun()
+            ss.onboarded = False
+            ss.ob_step = 0
+            save_profile()
+            st.rerun()
 
     st.markdown("#### 연료 사용량 (AI 맞춤 질문)")
     override = st.checkbox("정확한 수치를 모르겠어요 → 월 유류비 총 지출액으로 대신 입력할게요",
@@ -1619,7 +1649,10 @@ with st.sidebar:
         active = (ss.nav == key)
         if st.button(label, key="nav_" + key, use_container_width=True,
                      type="primary" if active else "secondary"):
-            ss.nav = key; ss.lino_open = False; st.rerun()
+            ss.nav = key
+            ss.lino_open = False
+            save_profile()
+            st.rerun()
     st.divider()
     st.markdown(
         "<style>"
@@ -1632,13 +1665,15 @@ with st.sidebar:
         "background:linear-gradient(135deg,#2272EB,#1858C6)!important;}"
         "</style><div class='lino-btn'>", unsafe_allow_html=True)
     if st.button("💬  Lino 비서 불러오기", key="open_lino", use_container_width=True):
-        ss.lino_open = True; st.rerun()
+        ss.lino_open = True
+        st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
     st.caption("유가·원가 리스크를 상담하는 AI 비서")
 
     st.divider()
     st.caption("👤 " + _current_user_id())
     if st.button("로그아웃", key="do_logout", use_container_width=True):
+        save_profile()
         ss["auth_user"] = None
         st.rerun()
     with st.expander("내 데이터 초기화"):
