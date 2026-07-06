@@ -773,15 +773,20 @@ if _first_boot and not ss.onboarded:
             ss[k] = v
         ss["onboarded"] = True
 
-_REQUIRED_PROFILE_KEYS = [
-    "user_first_name", "user_email",
-    "biz_계산방식", "biz_질문들", "pf_업종명", "pf_유종명",
-    "pf_전가율", "pf_연료비중", "pf_환율민감도",
-    "pf_영업이익률", "pf_월매출", "pf_지역", "pf_기간",
-]
-if ss.onboarded and any(k not in ss for k in _REQUIRED_PROFILE_KEYS):
-    ss.onboarded = False
-    ss.ob_step = 0
+_REQUIRED_PROFILE_DEFAULTS = {
+    "user_first_name": "", "user_email": "",
+    "biz_계산방식": "spend_based", "biz_질문들": [],
+    "pf_업종명": "일반 사업체", "pf_유종명": "자동차용경유",
+    "pf_전가율": 30, "pf_연료비중": 10, "pf_환율민감도": 0,
+    "pf_영업이익률": 5, "pf_월매출": 0, "pf_지역": "서울", "pf_기간": "7일",
+}
+# (예전에는 필수 키가 하나라도 비어있으면 onboarded를 False로 되돌려
+#  온보딩 1단계로 다시 보냈는데, 이게 마지막 단계 완료 직후에도 잘못
+#  발동해서 "완료 -> 1단계로 복귀" 증상을 일으켰다. 이제는 강제로
+#  되돌리지 않고, 비어있는 값만 안전한 기본값으로 채운다.)
+if ss.onboarded:
+    for _k, _v in _REQUIRED_PROFILE_DEFAULTS.items():
+        ss.setdefault(_k, _v)
 
 OB_STEPS = ["user_info", "intro", "confirm", "usage", "sales", "tune", "region"]
 
