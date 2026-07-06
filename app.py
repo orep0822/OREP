@@ -15,6 +15,12 @@ from matplotlib import font_manager
 from types import SimpleNamespace
 import yfinance as yf
 
+try:
+    import gspread
+    from google.oauth2.service_account import Credentials
+except Exception:
+    gspread = None
+
 # ─────────────────────────────────────────────────────────────
 #  키 설정
 # ─────────────────────────────────────────────────────────────
@@ -736,7 +742,61 @@ def _profile_path():
     safe = re.sub(r"[^a-zA-Z0-9_.@-]", "_", str(uid))
     return os.path.join(PROFILE_DIR, safe + ".json")
 
+
+# ─────────────────────────────────────────────────────────────
+#  구글 시트 영구 저장소
+#  (Streamlit Cloud는 로컬 파일이 재배포/슬립 때마다 사라지므로,
+#   실제 값 저장은 구글 시트에 하고, 로컬 파일은 예비 백업으로만 사용)
+# ─────────────────────────────────────────────────────────────
+@st.cache_resource(show_spinner=False)
+def _gsheet_client():
+    """서비스 계정으로 구글 시트에 연결. secrets 설정이 없으면 None을 반환."""
+    if gspread is None:
+        return None
+    try:
+        if "gcp_service_account" not in st.secrets:
+            return None
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+        gc = gspread.authorize(creds)
+        sheet_id = _secret("GSHEET_ID", "")
+        if not sheet_id:
+            return None
+        sh = gc.open_by_key(sheet_id)
+        try:
+            ws = sh.worksheet("profiles")
+        except Exception:
+            ws = sh.add_worksheet(title="profiles", rows=2000, cols=3)
+            ws.append_row(["user_id", "profile_json", "updated_at"])
+        return ws
+    except Exception:
+        return None
+
+def _gsheet_find_row(ws, uid):
+    """시트에서 해당 사용자의 행 번호를 찾는다 (없으면 None)."""
+    try:
+        cell = ws.find(uid, in_column=1)
+        return cell.row if cell else None
+    except Exception:
+        return None
+
 def load_profile():
+    uid = _current_user_id()
+
+    # 1) 구글 시트에서 우선 조회 (설정돼 있을 때)
+    ws = _gsheet_client()
+    if ws is not None:
+        try:
+            row = _gsheet_find_row(ws, uid)
+            if row:
+                raw = ws.cell(row, 2).value
+                if raw:
+                    return json.loads(raw)
+        except Exception:
+            pass
+
+    # 2) 구글 시트가 설정 안 됐거나 실패한 경우 로컬 백업 파일 사용
     p = _profile_path()
     if os.path.exists(p):
         try:
@@ -747,20 +807,37 @@ def load_profile():
     return None
 
 def save_profile():
-    """온보딩·마이페이지에서 입력한 프로필 값을 로그인 계정별 파일에 저장한다."""
+    """온보딩·마이페이지에서 입력한 프로필 값을 로그인 계정별로 저장한다.
+    구글 시트 연결이 설정돼 있으면 그쪽에 저장하고(재배포/슬립에도 유지),
+    항상 로컬 파일에도 백업해 둔다."""
     uid = _current_user_id()
     if not uid or uid == "unknown":
         return
-    
+
     # 기존 저장된 프로필을 불러와 현재 세션에 있는 값만 덮어씌움
-    # (위젯이 화면에서 사라져서 세션에서 날아가더라도 기존 데이터는 파일에 유지됨)
+    # (위젯이 화면에서 사라져서 세션에서 날아가더라도 기존 데이터는 유지됨)
     existing = load_profile() or {}
     for k, v in ss.items():
         if k.startswith(PROFILE_KEY_PREFIXES) or k in ("onboarded", "ob_step", "nav"):
             existing[k] = v
+    payload = json.dumps(existing, ensure_ascii=False, default=str)
+
+    ws = _gsheet_client()
+    if ws is not None:
+        try:
+            row = _gsheet_find_row(ws, uid)
+            now = datetime.datetime.now().isoformat()
+            if row:
+                ws.update_cell(row, 2, payload)
+                ws.update_cell(row, 3, now)
+            else:
+                ws.append_row([uid, payload, now])
+        except Exception:
+            pass
+
     try:
         with open(_profile_path(), "w", encoding="utf-8") as f:
-            json.dump(existing, f, ensure_ascii=False, default=str)
+            f.write(payload)
     except Exception:
         pass
 
