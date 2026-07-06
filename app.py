@@ -683,9 +683,11 @@ if not ss["auth_user"]:
         tab_login, tab_signup = st.tabs(["로그인", "회원가입"])
 
         with tab_login:
-            u = st.text_input("아이디", key="li_user")
-            p = st.text_input("비밀번호", type="password", key="li_pw")
-            if st.button("로그인", type="primary", use_container_width=True, key="li_btn"):
+            with st.form("login_form"):
+                u = st.text_input("아이디", key="li_user")
+                p = st.text_input("비밀번호", type="password", key="li_pw")
+                login_submitted = st.form_submit_button("로그인", type="primary", use_container_width=True)
+            if login_submitted:
                 users = load_users()
                 rec = users.get(u)
                 if not rec:
@@ -697,10 +699,12 @@ if not ss["auth_user"]:
                     st.rerun()
 
         with tab_signup:
-            nu = st.text_input("사용할 아이디", key="su_user")
-            np1 = st.text_input("비밀번호", type="password", key="su_pw1")
-            np2 = st.text_input("비밀번호 확인", type="password", key="su_pw2")
-            if st.button("회원가입", type="primary", use_container_width=True, key="su_btn"):
+            with st.form("signup_form"):
+                nu = st.text_input("사용할 아이디", key="su_user")
+                np1 = st.text_input("비밀번호", type="password", key="su_pw1")
+                np2 = st.text_input("비밀번호 확인", type="password", key="su_pw2")
+                signup_submitted = st.form_submit_button("회원가입", type="primary", use_container_width=True)
+            if signup_submitted:
                 users = load_users()
                 if not nu.strip() or not np1:
                     st.warning("아이디와 비밀번호를 입력해주세요.")
